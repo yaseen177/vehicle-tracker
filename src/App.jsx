@@ -32,7 +32,18 @@ function App() {
     });
   };
 
-  const handleLogin = () => signInWithPopup(auth, googleProvider);
+  const handleLogin = async () => {
+    // Forces the "Choose an Account" screen every time
+    googleProvider.setCustomParameters({
+      prompt: 'select_account'
+    });
+    
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error("Login failed:", error);
+    }
+  };
 
   const fetchVehicle = async () => {
     if (!regInput) return;
