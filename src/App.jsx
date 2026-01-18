@@ -5,7 +5,7 @@ import { doc, setDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc,
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { PDFDocument, rgb } from 'pdf-lib'; // Added 'rgb'
+import { PDFDocument, rgb } from 'pdf-lib'; 
 import "./App.css";
 
 // --- TOAST NOTIFICATION ---
@@ -194,7 +194,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [docs, setDocs] = useState([]);
   const [uploading, setUploading] = useState(false);
   
-  // --- NEW: Track selected filenames ---
+  // Track selected filenames for UI feedback
   const [logFile, setLogFile] = useState(null);
   const [docFile, setDocFile] = useState(null);
 
@@ -232,8 +232,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
       await addDoc(collection(db, "users", user.uid, "vehicles", vehicle.id, type === 'log' ? "logs" : "documents"), data);
       showToast(type === 'log' ? "Log added" : "Document saved");
       
-      e.target.reset(); // Clear form
-      // Clear the filename state
+      e.target.reset();
       if(type === 'log') setLogFile(null);
       if(type === 'doc') setDocFile(null);
 
@@ -241,8 +240,210 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     setUploading(false);
   };
 
-  // Generate Bundle Function (Keep your existing one here)
-  // ... (I omitted it to save space, but DO NOT DELETE IT from your code) ...
+  // --- GENERATE SALE BUNDLE ---
+  const generateSaleBundle = async () => {
+    showToast("Generating Bundle... (This may take a moment)", "success");
+    
+    try {
+      // 1. Create Summary Report (jsPDF)
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      
+      // Header
+      doc.setFontSize(22);
+      doc.setTextColor(40, 40, 40);
+      doc.text(`Vehicle History Report`, 14, 20);
+      
+      // Car Details Box
+      doc.setDrawColor(200);
+      doc.setFillColor(245, 247, 250);
+      doc.rect(14, 30, pageWidth - 28, 40, "F");
+      
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text(vehicle.registration, 20, 42);
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text(`${vehicle.make} ${vehicle.model} (${vehicle.colour})`, 20, 48);
+      doc.text(`Engine: ${vehicle.engineSize || '-'}cc  |  Fuel: ${vehicle.fuelType || '-'}`, 20, 54);
+      const manYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : 'Unknown';
+      doc.text(`Manufactured: ${manYear}`, 20, 60);
+
+      let currentY = 80;
+
+      // -- Service History --
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("Service & Maintenance", 14, currentY);
+      
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Date', 'Type', 'Description', 'Cost']],
+        body: logs.map(l => [formatDate(l.date), l.type, l.desc, `£${l.cost.toFixed(2)}`]),
+        theme: 'striped',
+        headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255] }
+      });
+      currentY = doc.lastAutoTable.finalY + 15;
+
+      // -- Document Inventory --
+      doc.text("Document Inventory", 14, currentY);
+      const docRows = docs.map(d => [
+        d.name,
+        d.expiry ? formatDate(d.expiry) : 'N/A',
+        "Attached in Bundle"
+      ]);
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Document Name', 'Expiry Date', 'Status']],
+        body: docRows,
+        theme: 'grid',
+        headStyles: { fillColor: [16, 185, 129], textColor: [255, 255, 255] }
+      });
+      currentY = doc.lastAutoTable.finalY + 15;
+
+      // -- MOT History (With Defects) --
+      doc.text("Recent MOT History", 14, currentY);
+      
+      // Map MOTs to rows, joining defects with newlines
+      const motRows = (vehicle.motTests || []).slice(0, 10).map(m => {
+        const defects = m.defects || [];
+        // Create a bulleted list string of defects
+        const defectText = defects.length > 0 
+          ? defects.map(d => `• ${d.text} (${d.type})`).join("\n")
+          : "No Advisories";
+
+        return [
+          formatDate(m.completedDate),
+          m.testResult,
+          m.odometerValue ? `${m.odometerValue} ${m.odometerUnit}` : "-",
+          defectText // This will wrap automatically in the cell
+        ];
+      });
+
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Date', 'Result', 'Mileage', 'Notes / Defects']],
+        body: motRows,
+        theme: 'grid', // 'grid' shows borders which is better for multi-line text
+        headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255] }, // Dark Grey Header, White Text
+        columnStyles: {
+          0: { cellWidth: 25 }, // Date
+          1: { cellWidth: 20, fontStyle: 'bold' }, // Result
+          2: { cellWidth: 25 }, // Mileage
+          3: { cellWidth: 'auto', fontSize: 8 } // Defects (smaller font to fit)
+        }
+      });
+
+      // -----------------------------------------------------------
+      // 2. PREPARE ATTACHMENTS
+      // -----------------------------------------------------------
+      const allAttachments = [
+        ...docs.map(d => ({ type: 'doc', name: d.name, url: d.url, expiry: d.expiry })),
+        ...logs.filter(l => l.receipt).map(l => ({ type: 'log', name: `Receipt: ${l.desc}`, url: l.receipt, date: l.date, cost: l.cost, desc: l.desc }))
+      ];
+
+      const pdfAttachments = [];
+      const imageAttachments = [];
+
+      allAttachments.forEach(item => {
+        const isPdf = item.url.toLowerCase().includes('.pdf');
+        if (isPdf) pdfAttachments.push(item);
+        else if (item.url.match(/\.(jpeg|jpg|png|webp)/i) || item.url.includes('alt=media')) imageAttachments.push(item);
+      });
+
+      // -----------------------------------------------------------
+      // 3. IMAGE EMBEDDING (jsPDF)
+      // -----------------------------------------------------------
+      for (const img of imageAttachments) {
+        try {
+          const imgData = await fetch(img.url).then(res => res.blob()).then(blob => {
+             return new Promise((resolve) => {
+               const reader = new FileReader();
+               reader.onloadend = () => resolve(reader.result);
+               reader.readAsDataURL(blob);
+             });
+          });
+
+          doc.addPage();
+          doc.setFontSize(16);
+          doc.setFont("helvetica", "bold");
+          doc.text(`Appendix: ${img.name}`, 14, 20);
+          
+          doc.setFontSize(11);
+          doc.setFont("helvetica", "normal");
+          if(img.type === 'log') {
+             doc.text(`Date: ${formatDate(img.date)}`, 14, 28);
+             doc.text(`Description: ${img.desc}`, 14, 34);
+             doc.text(`Amount: £${img.cost.toFixed(2)}`, 14, 40);
+          } else {
+             doc.text(`Expiry Date: ${img.expiry ? formatDate(img.expiry) : 'N/A'}`, 14, 28);
+          }
+
+          const imgProps = doc.getImageProperties(imgData);
+          const pdfWidth = pageWidth - 40;
+          const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+          
+          if (pdfHeight > pageHeight - 60) {
+             const scale = (pageHeight - 60) / pdfHeight;
+             doc.addImage(imgData, 'JPEG', 20, 50, pdfWidth * scale, pdfHeight * scale);
+          } else {
+             doc.addImage(imgData, 'JPEG', 20, 50, pdfWidth, pdfHeight);
+          }
+        } catch (e) { console.error("Error embedding image", e); }
+      }
+
+      // -----------------------------------------------------------
+      // 4. PDF MERGING (pdf-lib)
+      // -----------------------------------------------------------
+      const reportBytes = doc.output('arraybuffer');
+      const mergedPdf = await PDFDocument.create();
+      const reportPdf = await PDFDocument.load(reportBytes);
+      const reportPages = await mergedPdf.copyPages(reportPdf, reportPdf.getPageIndices());
+      reportPages.forEach((page) => mergedPdf.addPage(page));
+
+      for (const item of pdfAttachments) {
+        try {
+          const externalPdfBytes = await fetch(item.url).then(res => res.arrayBuffer());
+          const externalPdf = await PDFDocument.load(externalPdfBytes);
+          const externalPages = await mergedPdf.copyPages(externalPdf, externalPdf.getPageIndices());
+          
+          const titlePage = mergedPdf.addPage();
+          const { width, height } = titlePage.getSize();
+          
+          titlePage.drawText(`Appendix: ${item.name}`, { x: 50, y: height - 100, size: 24 });
+          
+          if(item.type === 'log') {
+            titlePage.drawText(`Date: ${formatDate(item.date)}`, { x: 50, y: height - 150, size: 18 });
+            titlePage.drawText(`Description: ${item.desc}`, { x: 50, y: height - 180, size: 18 });
+            titlePage.drawText(`Amount: £${item.cost.toFixed(2)}`, { x: 50, y: height - 210, size: 18 });
+          } else {
+            titlePage.drawText(`Expiry Date: ${item.expiry ? formatDate(item.expiry) : 'N/A'}`, { x: 50, y: height - 150, size: 18 });
+          }
+          titlePage.drawText(`(Original Document Attached Next)`, { x: 50, y: height - 300, size: 12, color: rgb(0.5, 0.5, 0.5) });
+
+          externalPages.forEach((page) => mergedPdf.addPage(page));
+
+        } catch (err) {
+          console.error("Could not merge PDF:", item.name, err);
+          showToast(`Failed to merge ${item.name}`, 'error');
+        }
+      }
+
+      const pdfBytes = await mergedPdf.save();
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${vehicle.registration}_SaleBundle.pdf`;
+      link.click();
+      showToast("Sale Bundle Downloaded Successfully!");
+
+    } catch (err) {
+      console.error("Bundle Error", err);
+      showToast("Error generating bundle. Check console.", "error");
+    }
+  };
 
   const manufactureYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : (vehicle.manufactureDate ? new Date(vehicle.manufactureDate).getFullYear() : 'Unknown');
 
@@ -271,8 +472,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
 
          {/* SALE BUNDLE BUTTON */}
          <div style={{marginTop:'30px', display:'flex', flexDirection:'column', gap:'10px'}}>
-            {/* Make sure generateSaleBundle is defined in your file or passed down */}
-            <button onClick={() => showToast("Function hidden for brevity, keep your generateSaleBundle!", "error")} className="btn btn-full" 
+            <button onClick={generateSaleBundle} className="btn btn-full" 
               style={{background: 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)', color:'black', border:'none', boxShadow:'0 4px 12px rgba(251, 191, 36, 0.3)'}}>
               📄 Generate Sale Bundle
             </button>
@@ -298,17 +498,10 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
               <input name="desc" placeholder="Description (e.g. Brake Pads)" required style={{marginBottom:'12px'}} />
               <div style={{display:'grid', gridTemplateColumns:'100px 1fr', gap:'12px'}}>
                 <input type="number" step="0.01" name="cost" placeholder="£0.00" />
-                
-                {/* --- LOG FILE INPUT --- */}
                 <div className={`file-upload-box ${logFile ? 'has-file' : ''}`}>
                    <span>{uploading ? "Uploading..." : (logFile ? `✅ ${logFile}` : "Attach Receipt")}</span>
-                   <input 
-                     type="file" 
-                     name="file" 
-                     onChange={(e) => setLogFile(e.target.files[0]?.name)} 
-                   />
+                   <input type="file" name="file" onChange={(e) => setLogFile(e.target.files[0]?.name)} />
                 </div>
-
               </div>
               <button disabled={uploading} className="btn btn-primary btn-full" style={{marginTop:'12px'}}>
                 {uploading ? <div className="spinner"></div> : "Save Entry"}
@@ -333,7 +526,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
           </>
         )}
 
-        {/* ... (Keep MOT Tab code same as before) ... */}
         {tab === 'mot' && (
           <div className="fade-in">
              {!vehicle.motTests || vehicle.motTests.length === 0 ? (
@@ -353,18 +545,10 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
                <div style={{display:'grid', gap:'12px'}}>
                  <input name="name" placeholder="Name (e.g. V5C)" required />
                  <input type="date" name="expiry" />
-                 
-                 {/* --- DOC FILE INPUT --- */}
                  <div className={`file-upload-box ${docFile ? 'has-file' : ''}`}>
                    <span>{uploading ? "Uploading..." : (docFile ? `✅ ${docFile}` : "Select PDF / Image")}</span>
-                   <input 
-                     type="file" 
-                     name="file" 
-                     required 
-                     onChange={(e) => setDocFile(e.target.files[0]?.name)} 
-                   />
+                   <input type="file" name="file" required onChange={(e) => setDocFile(e.target.files[0]?.name)} />
                  </div>
-
                  <button disabled={uploading} className="btn btn-primary btn-full">
                     {uploading ? <div className="spinner"></div> : "Save Document"}
                  </button>
