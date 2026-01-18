@@ -373,35 +373,82 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
 }
 
 // --- NEW COMPONENT: Expandable MOT Card ---
-// This component handles the "Click to Expand" logic
+// --- UPDATED COMPONENT: Robust MOT Card ---
 const MotTestCard = ({ test }) => {
   const [isOpen, setIsOpen] = useState(false);
   
-  // We only show the arrow/pointer IF there are actually comments to show
-  const hasDetails = test.rfrAndComments && test.rfrAndComments.length > 0;
+  // Debug: Check your console to see what data is actually inside!
+  console.log("Rendering Test:", test);
+
+  // 1. Safe Data Access (Handle different API variable names)
+  const result = test.testResult || test.status || "UNKNOWN";
+  const date = test.completedDate || test.testDate || null;
+  const mileage = test.odometerValue ? `${test.odometerValue} ${test.odometerUnit || 'mi'}` : "Unknown Mileage";
+  const testNo = test.motTestNumber || "No Ref";
+  
+  // 2. Check for details
+  const comments = test.rfrAndComments || [];
+  const hasDetails = comments.length > 0;
 
   return (
-    <div className={`mot-card ${isOpen ? 'mot-expanded' : ''}`}>
-      {/* Clicking the header toggles 'isOpen' */}
-      <div className="mot-card-header" onClick={() => hasDetails && setIsOpen(!isOpen)}>
-         {/* ... (Date, Result, Mileage) ... */}
-         
-         {/* The Arrow Icon */}
-         {hasDetails && <div className="mot-expand-icon">{isOpen ? '▲' : '▼'}</div>}
+    <div className={`mot-card ${isOpen ? 'mot-expanded' : ''}`} style={{marginBottom: '16px'}}>
+      
+      {/* HEADER: Always Visible */}
+      <div 
+        className="mot-card-header" 
+        onClick={() => hasDetails && setIsOpen(!isOpen)} 
+        style={{ cursor: hasDetails ? 'pointer' : 'default', display:'flex', justifyContent:'space-between', width:'100%' }}
+      >
+        <div>
+           {/* Force White Text for Date */}
+           <div style={{fontWeight:'700', fontSize:'1.1rem', color:'#fff', marginBottom:'6px'}}>
+             {date ? new Date(date).toLocaleDateString('en-GB') : "Unknown Date"}
+           </div>
+           
+           {/* Subtitles */}
+           <div className="mot-meta" style={{color:'#94a3b8', fontSize:'0.9rem', display:'flex', gap:'15px'}}>
+              <div>Mileage: <span style={{color:'#fff', fontWeight:600}}>{mileage}</span></div>
+              <div>Test No: <span style={{color:'#fff', fontWeight:600}}>{testNo}</span></div>
+           </div>
+        </div>
+        
+        <div style={{display:'flex', alignItems:'center', gap:'20px'}}>
+           {/* PASS/FAIL Badge */}
+           <div className={`mot-result ${result === 'PASSED' ? 'result-pass' : 'result-fail'}`} 
+                style={{
+                  background: result === 'PASSED' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  color: result === 'PASSED' ? '#34d399' : '#f87171',
+                  border: result === 'PASSED' ? '1px solid #059669' : '1px solid #b91c1c',
+                  padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold'
+                }}>
+             {result}
+           </div>
+
+           {/* Arrow Icon */}
+           {hasDetails && (
+             <div className="mot-expand-icon" style={{color: '#fff', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)'}}>
+               ▼
+             </div>
+           )}
+        </div>
       </div>
 
-      {/* The Hidden Details List */}
+      {/* EXPANDABLE DETAILS */}
       {isOpen && hasDetails && (
-        <div className="mot-details">
+        <div className="mot-details" style={{padding:'20px', borderTop:'1px solid rgba(255,255,255,0.1)'}}>
            <div className="rfr-list">
-              {test.rfrAndComments.map((item, i) => (
-                 <div key={i} className="rfr-item">
-                    {/* Badge: FAIL / ADVISORY / MINOR */}
-                    <span className={`rfr-type ${item.type === 'FAIL' ? 'type-fail' : 'type-advisory'}`}>
+              {comments.map((item, i) => (
+                 <div key={i} className="rfr-item" style={{marginBottom:'10px', display:'flex', gap:'10px', alignItems:'flex-start'}}>
+                    {/* Failure Type Badge */}
+                    <span className={`rfr-type ${item.type === 'FAIL' ? 'type-fail' : 'type-advisory'}`}
+                          style={{
+                            background: item.type === 'FAIL' ? '#b91c1c' : '#ca8a04',
+                            color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold'
+                          }}>
                       {item.type}
                     </span>
-                    {/* The Text: e.g. "Front Tyre worn..." */}
-                    <span>{item.text}</span>
+                    {/* Failure Text */}
+                    <span style={{color:'#e2e8f0', fontSize:'0.95rem'}}>{item.text}</span>
                  </div>
               ))}
            </div>
