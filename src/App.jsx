@@ -68,17 +68,17 @@ function MainApp() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      // --- NEW: Save FULL Details ---
+      // --- SAVE FULL MOT HISTORY ---
       const newCar = {
         registration: data.registration || reg,
         make: data.make,
         model: data.model,
         colour: data.primaryColour,
-        engineSize: data.engineSize, // New
-        fuelType: data.fuelType,     // New
-        firstUsedDate: data.firstUsedDate, // New
-        manufactureDate: data.manufactureDate, // New
-        motTests: data.motTests || [], // NEW: Save the entire history array
+        engineSize: data.engineSize, 
+        fuelType: data.fuelType,     
+        firstUsedDate: data.firstUsedDate, 
+        manufactureDate: data.manufactureDate,
+        motTests: data.motTests || [], // <--- This array contains the defects/advisories
         
         motExpiry: data.motTests ? data.motTests[0].expiryDate : "",
         taxExpiry: "",
@@ -186,8 +186,6 @@ function GarageView({ vehicles, onOpen, onAdd, loading }) {
   );
 }
 
-// ... (Imports and Top Components remain the same) ...
-
 function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [tab, setTab] = useState("logs");
   const [logs, setLogs] = useState([]);
@@ -232,7 +230,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     setUploading(false);
   };
 
-  // Derived Specs
   const manufactureYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : (vehicle.manufactureDate ? new Date(vehicle.manufactureDate).getFullYear() : 'Unknown');
 
   return (
@@ -372,40 +369,31 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   );
 }
 
-// --- NEW COMPONENT: Expandable MOT Card ---
-// --- UPDATED COMPONENT: Robust MOT Card ---
+// --- UPDATED MOT CARD (Expandable) ---
 const MotTestCard = ({ test }) => {
   const [isOpen, setIsOpen] = useState(false);
   
-  // Debug: Check your console to see what data is actually inside!
-  console.log("Rendering Test:", test);
-
-  // 1. Safe Data Access (Handle different API variable names)
   const result = test.testResult || test.status || "UNKNOWN";
   const date = test.completedDate || test.testDate || null;
   const mileage = test.odometerValue ? `${test.odometerValue} ${test.odometerUnit || 'mi'}` : "Unknown Mileage";
   const testNo = test.motTestNumber || "No Ref";
-  
-  // 2. Check for details
   const comments = test.rfrAndComments || [];
   const hasDetails = comments.length > 0;
 
   return (
     <div className={`mot-card ${isOpen ? 'mot-expanded' : ''}`} style={{marginBottom: '16px'}}>
       
-      {/* HEADER: Always Visible */}
+      {/* HEADER: Click to toggle */}
       <div 
         className="mot-card-header" 
         onClick={() => hasDetails && setIsOpen(!isOpen)} 
         style={{ cursor: hasDetails ? 'pointer' : 'default', display:'flex', justifyContent:'space-between', width:'100%' }}
       >
         <div>
-           {/* Force White Text for Date */}
            <div style={{fontWeight:'700', fontSize:'1.1rem', color:'#fff', marginBottom:'6px'}}>
              {date ? new Date(date).toLocaleDateString('en-GB') : "Unknown Date"}
            </div>
            
-           {/* Subtitles */}
            <div className="mot-meta" style={{color:'#94a3b8', fontSize:'0.9rem', display:'flex', gap:'15px'}}>
               <div>Mileage: <span style={{color:'#fff', fontWeight:600}}>{mileage}</span></div>
               <div>Test No: <span style={{color:'#fff', fontWeight:600}}>{testNo}</span></div>
@@ -413,7 +401,6 @@ const MotTestCard = ({ test }) => {
         </div>
         
         <div style={{display:'flex', alignItems:'center', gap:'20px'}}>
-           {/* PASS/FAIL Badge */}
            <div className={`mot-result ${result === 'PASSED' ? 'result-pass' : 'result-fail'}`} 
                 style={{
                   background: result === 'PASSED' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
@@ -424,7 +411,6 @@ const MotTestCard = ({ test }) => {
              {result}
            </div>
 
-           {/* Arrow Icon */}
            {hasDetails && (
              <div className="mot-expand-icon" style={{color: '#fff', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)'}}>
                ▼
@@ -433,22 +419,20 @@ const MotTestCard = ({ test }) => {
         </div>
       </div>
 
-      {/* EXPANDABLE DETAILS */}
+      {/* DETAILS: Shown when expanded */}
       {isOpen && hasDetails && (
         <div className="mot-details" style={{padding:'20px', borderTop:'1px solid rgba(255,255,255,0.1)'}}>
            <div className="rfr-list">
               {comments.map((item, i) => (
                  <div key={i} className="rfr-item" style={{marginBottom:'10px', display:'flex', gap:'10px', alignItems:'flex-start'}}>
-                    {/* Failure Type Badge */}
                     <span className={`rfr-type ${item.type === 'FAIL' ? 'type-fail' : 'type-advisory'}`}
                           style={{
                             background: item.type === 'FAIL' ? '#b91c1c' : '#ca8a04',
-                            color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold'
+                            color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', minWidth:'80px', textAlign:'center'
                           }}>
                       {item.type}
                     </span>
-                    {/* Failure Text */}
-                    <span style={{color:'#e2e8f0', fontSize:'0.95rem'}}>{item.text}</span>
+                    <span style={{color:'#e2e8f0', fontSize:'0.95rem', lineHeight:'1.5'}}>{item.text}</span>
                  </div>
               ))}
            </div>
