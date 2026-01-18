@@ -11,7 +11,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState("garage");
   const [myVehicles, setMyVehicles] = useState([]);
-  const [activeVehicle, setActiveVehicle] = useState(null);
+  const [activeVehicleId, setActiveVehicleId] = useState(null); // CHANGED: Store ID, not object
   const [regInput, setRegInput] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -31,13 +31,16 @@ function App() {
     });
   };
 
+  // --- DYNAMICALLY FIND THE ACTIVE CAR ---
+  // This ensures the dashboard always shows the LIVE data from the database
+  const activeVehicle = myVehicles.find(v => v.id === activeVehicleId);
+
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
     try { await signInWithPopup(auth, provider); } catch (e) { console.error(e); }
   };
 
-  // --- ADD NEW VEHICLE ---
   const addNewVehicle = async () => {
     if (!regInput) return;
     setLoading(true);
@@ -52,15 +55,14 @@ function App() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      // Default Tax/Insurance to empty initially
       const newCar = {
         registration: data.registration || regInput,
         make: data.make,
         model: data.model,
         colour: data.primaryColour,
         motExpiry: data.motTests ? data.motTests[0].expiryDate : "",
-        taxExpiry: "",      // User to add
-        insuranceExpiry: "", // User to add
+        taxExpiry: "",
+        insuranceExpiry: "",
         addedAt: new Date().toISOString()
       };
 
@@ -77,15 +79,15 @@ function App() {
   const deleteVehicle = async (vehicleId) => {
     if (window.confirm("Permanently delete this vehicle?")) {
       await deleteDoc(doc(db, "users", user.uid, "vehicles", vehicleId));
-      if (activeVehicle?.id === vehicleId) {
+      if (activeVehicleId === vehicleId) {
         setView("garage");
-        setActiveVehicle(null);
+        setActiveVehicleId(null);
       }
     }
   };
 
   const openDashboard = (car) => {
-    setActiveVehicle(car);
+    setActiveVehicleId(car.id); // CHANGED: Set ID only
     setView("dashboard");
   };
 
@@ -96,7 +98,7 @@ function App() {
     <div className="app-wrapper">
       <header className="top-nav">
         <div className="logo" onClick={() => setView("garage")} style={{cursor: 'pointer'}}>
-          My Garage {view === 'dashboard' && <span style={{color:'#666', fontSize:'0.8em'}}> / {activeVehicle?.registration}</span>}
+          My Garage {view === 'dashboard' && activeVehicle && <span style={{color:'#666', fontSize:'0.8em'}}> / {activeVehicle.registration}</span>}
         </div>
         <div style={{display:'flex', gap:'10px'}}>
           {view === 'dashboard' && <button onClick={() => setView("garage")} className="btn btn-secondary">Back to Garage</button>}
@@ -115,6 +117,7 @@ function App() {
         />
       )}
 
+      {/* Pass the LIVE 'activeVehicle' object derived from state */}
       {view === 'dashboard' && activeVehicle && (
         <DashboardView 
           user={user} 
@@ -130,11 +133,10 @@ function App() {
 const formatDate = (dateStr) => {
   if (!dateStr) return "Not Set";
   const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr; // Fallback if string is weird
-  return d.toLocaleDateString('en-GB'); // "en-GB" forces DD/MM/YYYY
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('en-GB'); 
 };
 
-// --- HELPER: CALCULATE DAYS LEFT ---
 const calculateDays = (dateStr) => {
   if (!dateStr) return null;
   const diff = new Date(dateStr) - new Date();
@@ -197,7 +199,6 @@ function DashboardView({ user, vehicle, onDelete }) {
   const [docs, setDocs] = useState([]);
   const [uploading, setUploading] = useState(false);
 
-  // Load Sub-Collections
   useEffect(() => {
     const logQ = query(collection(db, "users", user.uid, "vehicles", vehicle.id, "logs"), orderBy("date", "desc"));
     const unsubLogs = onSnapshot(logQ, (snap) => setLogs(snap.docs.map(d => ({id:d.id, ...d.data()}))));
@@ -208,11 +209,20 @@ function DashboardView({ user, vehicle, onDelete }) {
     return () => { unsubLogs(); unsubDocs(); };
   }, [vehicle.id]);
 
-  // Update Expiry Dates (Tax/Insurance)
+  // --- FIX: Update Date Function ---
   const updateDate = async (field, value) => {
-    await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), {
-      [field]: value
-    });
+    try {
+      // 1. Update Firestore
+      await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), {
+        [field]: value
+      });
+      // Note: We don't need to manually update local state here because 
+      // the 'loadGarage' listener in App.jsx will detect the change 
+      // and update the 'activeVehicle' prop automatically!
+    } catch (err) {
+      console.error("Failed to update date", err);
+      alert("Failed to save date");
+    }
   };
 
   const handleAddLog = async (e) => {
@@ -264,46 +274,46 @@ function DashboardView({ user, vehicle, onDelete }) {
     if(confirm("Delete this entry?")) await deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, col, id));
   };
 
-  // Calculate Status Colors
   const getStatusColor = (dateStr) => {
     const days = calculateDays(dateStr);
     if (!days) return '#666'; 
-    if (days < 0) return 'red'; // Expired
-    if (days < 30) return 'orange'; // Warning
-    return 'green'; // OK
+    if (days < 0) return 'red'; 
+    if (days < 30) return 'orange'; 
+    return 'green'; 
   };
 
   return (
     <div className="dashboard-grid">
-      {/* SIDEBAR */}
       <div className="bento-card">
          <div className="car-plate">{vehicle.registration}</div>
          <h2 style={{margin:0}}>{vehicle.make}</h2>
          <p style={{marginTop:0}}>{vehicle.model}</p>
          <hr style={{borderColor:'#eee'}}/>
 
-         {/* STATUTORY DATES (MOT, TAX, INS) */}
          <div className="stat-group">
             <div className="stat-label">MOT Expiry</div>
             <div className="stat-value" style={{color: getStatusColor(vehicle.motExpiry)}}>
               {formatDate(vehicle.motExpiry)}
             </div>
-            {/* Hidden date input for updating if needed, but usually from API */}
          </div>
 
+         {/* --- TAX INPUT --- */}
          <div className="stat-group">
             <div className="stat-label">Road Tax Expiry</div>
             <input 
               type="date" 
+              // value must match YYYY-MM-DD for the input to show it
               value={vehicle.taxExpiry || ""} 
               onChange={(e) => updateDate('taxExpiry', e.target.value)}
               style={{marginBottom:'5px'}}
             />
+            {/* We show the prettified DD/MM/YYYY below the input */}
             <div className="stat-value" style={{fontSize:'1rem', color: getStatusColor(vehicle.taxExpiry)}}>
               {vehicle.taxExpiry ? formatDate(vehicle.taxExpiry) : "Set Date 👆"}
             </div>
          </div>
 
+         {/* --- INSURANCE INPUT --- */}
          <div className="stat-group">
             <div className="stat-label">Insurance Expiry</div>
             <input 
@@ -322,7 +332,6 @@ function DashboardView({ user, vehicle, onDelete }) {
          </div>
       </div>
 
-      {/* MAIN CONTENT */}
       <div>
         <div style={{display:'flex', gap:'10px', marginBottom:'20px'}}>
           <button onClick={() => setTab("logs")} className={`btn ${tab==='logs' ? 'btn-primary' : 'btn-secondary'}`}>Service History</button>
