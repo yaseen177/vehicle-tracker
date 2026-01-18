@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { auth, googleProvider, db, storage } from "./firebase";
+import { signInWithPopup, signOut, onAuthStateChanged, GoogleAuthProvider } from "firebase/auth";
 import { doc, setDoc, getDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import "./App.css";
-// Make sure GoogleAuthProvider is in this list
-import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -34,19 +33,9 @@ function App() {
   };
 
   const handleLogin = async () => {
-    // Create a NEW provider instance every time the button is clicked
     const provider = new GoogleAuthProvider();
-    
-    // Force the "Choose Account" screen
-    provider.setCustomParameters({
-      prompt: 'select_account'
-    });
-
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (e) {
-      console.error("Login Error:", e);
-    }
+    provider.setCustomParameters({ prompt: 'select_account' });
+    try { await signInWithPopup(auth, provider); } catch (e) { console.error(e); }
   };
 
   // --- ADD NEW VEHICLE ---
@@ -76,7 +65,6 @@ function App() {
       };
 
       // 2. Save to 'vehicles' subcollection
-      // We use the Registration Number as the Document ID to prevent duplicates
       await setDoc(doc(db, "users", user.uid, "vehicles", newCar.registration), newCar);
       
       setRegInput("");
@@ -85,6 +73,22 @@ function App() {
     } catch (err) {
       alert("Error: " + err.message);
       setLoading(false);
+    }
+  };
+
+  // --- DELETE VEHICLE ---
+  const deleteVehicle = async (vehicleId) => {
+    if (window.confirm("Are you sure you want to permanently delete this vehicle? This cannot be undone.")) {
+      try {
+        await deleteDoc(doc(db, "users", user.uid, "vehicles", vehicleId));
+        // If we are currently viewing this car, go back to garage
+        if (activeVehicle?.id === vehicleId) {
+          setView("garage");
+          setActiveVehicle(null);
+        }
+      } catch (err) {
+        alert("Error deleting vehicle: " + err.message);
+      }
     }
   };
 
@@ -128,7 +132,11 @@ function App() {
       )}
 
       {view === 'dashboard' && activeVehicle && (
-        <DashboardView user={user} vehicle={activeVehicle} />
+        <DashboardView 
+          user={user} 
+          vehicle={activeVehicle} 
+          onDelete={() => deleteVehicle(activeVehicle.id)} // Pass delete function
+        />
       )}
     </div>
   );
@@ -188,7 +196,7 @@ function GarageView({ vehicles, onOpen, regInput, setRegInput, onAdd, loading })
   );
 }
 
-function DashboardView({ user, vehicle }) {
+function DashboardView({ user, vehicle, onDelete }) {
   const [tab, setTab] = useState("logs"); // 'logs' or 'docs'
   const [logs, setLogs] = useState([]);
   const [docs, setDocs] = useState([]);
@@ -232,7 +240,7 @@ function DashboardView({ user, vehicle }) {
     setUploading(false);
   };
 
-  // Add Document (Insurance, V5C etc)
+  // Add Document
   const handleAddDoc = async (e) => {
     e.preventDefault();
     setUploading(true);
@@ -247,7 +255,7 @@ function DashboardView({ user, vehicle }) {
 
     await addDoc(collection(db, "users", user.uid, "vehicles", vehicle.id, "documents"), {
       name: form.get("name"),
-      expiry: form.get("expiry"), // Optional expiry date for insurance
+      expiry: form.get("expiry"),
       url: fileUrl,
       uploadedAt: new Date().toISOString().split('T')[0]
     });
@@ -276,6 +284,13 @@ function DashboardView({ user, vehicle }) {
          <div className="stat-group">
             <div className="stat-label">Colour</div>
             <div className="stat-value">{vehicle.colour}</div>
+         </div>
+
+         {/* NEW DELETE BUTTON HERE */}
+         <div style={{marginTop: '30px', paddingTop: '20px', borderTop: '1px solid #eee'}}>
+           <button onClick={onDelete} className="btn btn-danger" style={{width: '100%'}}>
+             🗑 Delete Vehicle
+           </button>
          </div>
       </div>
 
