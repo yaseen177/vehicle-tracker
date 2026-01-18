@@ -1,38 +1,65 @@
 import React, { useState, useEffect } from "react";
 import { auth, googleProvider, db, storage } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, GoogleAuthProvider } from "firebase/auth";
-import { doc, setDoc, getDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, updateDoc } from "firebase/firestore";
+import { doc, setDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import "./App.css";
 
+// --- TOAST NOTIFICATION SYSTEM ---
+const ToastContext = React.createContext();
+
+function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = (msg, type = 'success') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, msg, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+  };
+
+  return (
+    <ToastContext.Provider value={addToast}>
+      {children}
+      <div className="toast-container">
+        {toasts.map(t => (
+          <div key={t.id} className="toast">
+            {t.type === 'success' ? '✅' : '⚠️'} {t.msg}
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+}
+
 function App() {
+  return (
+    <ToastProvider>
+      <MainApp />
+    </ToastProvider>
+  );
+}
+
+function MainApp() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState("garage");
   const [myVehicles, setMyVehicles] = useState([]);
-  const [activeVehicleId, setActiveVehicleId] = useState(null); // CHANGED: Store ID, not object
-  const [regInput, setRegInput] = useState("");
+  const [activeVehicleId, setActiveVehicleId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const showToast = React.useContext(ToastContext);
 
-  // --- AUTH & LOAD GARAGE ---
-  useEffect(() => {
-    return onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      if (u) loadGarage(u.uid);
-    });
-  }, []);
+  useEffect(() => onAuthStateChanged(auth, u => {
+    setUser(u);
+    if (u) loadGarage(u.uid);
+  }), []);
 
   const loadGarage = (uid) => {
-    const q = collection(db, "users", uid, "vehicles");
-    onSnapshot(q, (snapshot) => {
-      const cars = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMyVehicles(cars);
+    onSnapshot(collection(db, "users", uid, "vehicles"), (snap) => {
+      setMyVehicles(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
   };
 
-  // --- DYNAMICALLY FIND THE ACTIVE CAR ---
-  // This ensures the dashboard always shows the LIVE data from the database
   const activeVehicle = myVehicles.find(v => v.id === activeVehicleId);
 
   const handleLogin = async () => {
@@ -41,22 +68,21 @@ function App() {
     try { await signInWithPopup(auth, provider); } catch (e) { console.error(e); }
   };
 
-  const addNewVehicle = async () => {
-    if (!regInput) return;
+  const addNewVehicle = async (reg) => {
+    if (!reg) return;
     setLoading(true);
     try {
       const res = await fetch("/api/vehicle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ registration: regInput })
+        body: JSON.stringify({ registration: reg })
       });
-      
       if (res.status === 404) throw new Error("Vehicle not found.");
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
       const newCar = {
-        registration: data.registration || regInput,
+        registration: data.registration || reg,
         make: data.make,
         model: data.model,
         colour: data.primaryColour,
@@ -67,13 +93,11 @@ function App() {
       };
 
       await setDoc(doc(db, "users", user.uid, "vehicles", newCar.registration), newCar);
-      setRegInput("");
-      setLoading(false);
-      alert("Vehicle Added!");
+      showToast("Vehicle successfully added!");
     } catch (err) {
-      alert("Error: " + err.message);
-      setLoading(false);
+      showToast(err.message, "error");
     }
+    setLoading(false);
   };
 
   const deleteVehicle = async (vehicleId) => {
@@ -83,341 +107,236 @@ function App() {
         setView("garage");
         setActiveVehicleId(null);
       }
+      showToast("Vehicle deleted.");
     }
   };
 
-  const openDashboard = (car) => {
-    setActiveVehicleId(car.id); // CHANGED: Set ID only
-    setView("dashboard");
-  };
-
-  // --- RENDER ---
   if (!user) return <LoginScreen onLogin={handleLogin} />;
 
   return (
-    <div className="app-wrapper">
+    <div className="app-wrapper fade-in">
       <header className="top-nav">
-        <div className="logo" onClick={() => setView("garage")} style={{cursor: 'pointer'}}>
-          My Garage {view === 'dashboard' && activeVehicle && <span style={{color:'#666', fontSize:'0.8em'}}> / {activeVehicle.registration}</span>}
+        <div className="logo" onClick={() => setView("garage")}>
+           🚗 My Garage {view === 'dashboard' && activeVehicle && <span> / {activeVehicle.registration}</span>}
         </div>
-        <div style={{display:'flex', gap:'10px'}}>
-          {view === 'dashboard' && <button onClick={() => setView("garage")} className="btn btn-secondary">Back to Garage</button>}
-          <button onClick={() => signOut(auth)} className="btn btn-danger">Sign Out</button>
+        <div style={{display:'flex', gap:'12px'}}>
+          {view === 'dashboard' && <button onClick={() => setView("garage")} className="btn btn-secondary">Back</button>}
+          <button onClick={() => signOut(auth)} className="btn btn-secondary btn-sm">Sign Out</button>
         </div>
       </header>
 
       {view === 'garage' && (
         <GarageView 
           vehicles={myVehicles} 
-          onOpen={openDashboard} 
-          regInput={regInput} 
-          setRegInput={setRegInput} 
+          onOpen={(id) => { setActiveVehicleId(id); setView("dashboard"); }} 
           onAdd={addNewVehicle} 
           loading={loading}
         />
       )}
 
-      {/* Pass the LIVE 'activeVehicle' object derived from state */}
       {view === 'dashboard' && activeVehicle && (
         <DashboardView 
           user={user} 
           vehicle={activeVehicle} 
           onDelete={() => deleteVehicle(activeVehicle.id)}
+          showToast={showToast}
         />
       )}
     </div>
   );
 }
 
-// --- HELPER: UK DATE FORMATTER (DD/MM/YYYY) ---
-const formatDate = (dateStr) => {
-  if (!dateStr) return "Not Set";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString('en-GB'); 
-};
-
-const calculateDays = (dateStr) => {
-  if (!dateStr) return null;
-  const diff = new Date(dateStr) - new Date();
-  return Math.ceil(diff / (1000 * 60 * 60 * 24));
-};
+// --- VIEWS ---
 
 function LoginScreen({ onLogin }) {
   return (
-    <div className="search-hero">
-      <h1>🚗 My Garage</h1>
-      <p style={{marginBottom: '2rem', fontSize: '1.2rem', color: '#666'}}>
-        Track Tax, MOT, Insurance and Service History.
-      </p>
-      <button onClick={onLogin} className="btn btn-primary" style={{fontSize: '1.2rem', padding: '20px 40px'}}>
-        Sign in with Google
-      </button>
+    <div style={{display:'flex', height:'100vh', alignItems:'center', justifyContent:'center', background:'#f8fafc'}}>
+      <div className="bento-card fade-in" style={{textAlign:'center', maxWidth:'400px'}}>
+        <h1 style={{fontSize:'2rem', marginBottom:'10px'}}>🚗 My Garage</h1>
+        <p style={{marginBottom:'30px'}}>The seamless way to track your vehicle history, documents, and important dates.</p>
+        <button onClick={onLogin} className="btn btn-primary btn-full">Sign in with Google</button>
+      </div>
     </div>
   );
 }
 
-function GarageView({ vehicles, onOpen, regInput, setRegInput, onAdd, loading }) {
+function GarageView({ vehicles, onOpen, onAdd, loading }) {
+  const [input, setInput] = useState("");
   return (
-    <div className="garage-container">
-      <div className="bento-card" style={{textAlign:'center', marginBottom: '2rem'}}>
+    <div>
+      <div className="bento-card" style={{marginBottom:'40px', textAlign:'center', padding:'40px 20px'}}>
         <h2>Add a Vehicle</h2>
-        <div style={{display:'flex', gap:'10px', maxWidth:'500px', margin:'0 auto'}}>
+        <p style={{marginBottom:'20px'}}>Enter your registration number to get started.</p>
+        <div style={{maxWidth:'300px', margin:'0 auto', display:'flex', gap:'10px'}}>
           <input 
-            value={regInput} 
-            onChange={(e) => setRegInput(e.target.value.toUpperCase())} 
-            placeholder="ENTER REG" 
-            style={{fontSize:'1.2rem', textAlign:'center', textTransform:'uppercase'}}
+            value={input} 
+            onChange={e => setInput(e.target.value.toUpperCase())} 
+            placeholder="AA19 AAA" 
+            style={{textAlign:'center', textTransform:'uppercase', fontSize:'1.1rem', letterSpacing:'1px'}} 
           />
-          <button onClick={onAdd} disabled={loading} className="btn btn-primary">
-            {loading ? "Finding..." : "Add"}
+          <button onClick={() => { onAdd(input); setInput(""); }} disabled={loading} className="btn btn-primary">
+            {loading ? <div className="spinner"></div> : "Add"}
           </button>
         </div>
       </div>
 
-      <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px'}}>
-        {vehicles.map(car => {
-          const days = calculateDays(car.motExpiry);
-          return (
-            <div key={car.id} className="bento-card" style={{cursor: 'pointer', border: '1px solid #e5e7eb'}} onClick={() => onOpen(car)}>
-              <div className="car-plate" style={{fontSize: '1.2rem'}}>{car.registration}</div>
-              <h3 style={{margin:'10px 0 5px 0'}}>{car.make} {car.model}</h3>
-              <div style={{marginTop:'15px', color: days && days < 30 ? 'red' : 'green', fontWeight:'bold'}}>
-                 MOT: {days !== null ? `${days} Days Left` : 'Unknown'}
-              </div>
+      <div className="garage-grid">
+        {vehicles.map(car => (
+          <div key={car.id} onClick={() => onOpen(car.id)} className="bento-card garage-card">
+            <div className="plate-wrapper"><div className="car-plate">{car.registration}</div></div>
+            <h2 style={{marginTop:'10px'}}>{car.make}</h2>
+            <p>{car.model}</p>
+            <div style={{marginTop:'20px', display:'flex', gap:'8px'}}>
+               <Badge date={car.motExpiry} label="MOT" />
+               <div style={{marginLeft:'auto', color:'var(--accent)', fontSize:'0.9rem', fontWeight:'600'}}>Manage →</div>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function DashboardView({ user, vehicle, onDelete }) {
+function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [tab, setTab] = useState("logs");
   const [logs, setLogs] = useState([]);
   const [docs, setDocs] = useState([]);
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    const logQ = query(collection(db, "users", user.uid, "vehicles", vehicle.id, "logs"), orderBy("date", "desc"));
-    const unsubLogs = onSnapshot(logQ, (snap) => setLogs(snap.docs.map(d => ({id:d.id, ...d.data()}))));
-
-    const docQ = collection(db, "users", user.uid, "vehicles", vehicle.id, "documents");
-    const unsubDocs = onSnapshot(docQ, (snap) => setDocs(snap.docs.map(d => ({id:d.id, ...d.data()}))));
-
+    const unsubLogs = onSnapshot(query(collection(db, "users", user.uid, "vehicles", vehicle.id, "logs"), orderBy("date", "desc")), 
+      snap => setLogs(snap.docs.map(d => ({id:d.id, ...d.data()}))));
+    const unsubDocs = onSnapshot(collection(db, "users", user.uid, "vehicles", vehicle.id, "documents"), 
+      snap => setDocs(snap.docs.map(d => ({id:d.id, ...d.data()}))));
     return () => { unsubLogs(); unsubDocs(); };
   }, [vehicle.id]);
 
-  // --- FIX: Update Date Function ---
   const updateDate = async (field, value) => {
-    try {
-      // 1. Update Firestore
-      await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), {
-        [field]: value
-      });
-      // Note: We don't need to manually update local state here because 
-      // the 'loadGarage' listener in App.jsx will detect the change 
-      // and update the 'activeVehicle' prop automatically!
-    } catch (err) {
-      console.error("Failed to update date", err);
-      alert("Failed to save date");
-    }
+    await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), { [field]: value });
+    showToast(`${field === 'taxExpiry' ? 'Tax' : 'Insurance'} date updated!`);
   };
 
-  // Updated: Adds Try/Catch to show errors
-  const handleAddLog = async (e) => {
+  const handleUpload = async (e, type) => {
     e.preventDefault();
     setUploading(true);
-    
     try {
       const form = new FormData(e.target);
       const file = form.get("file");
-      let fileUrl = "";
+      if (!file || file.size === 0) throw new Error("Please select a file.");
 
-      if (file && file.size > 0) {
-        // Create reference
-        const storageRef = ref(storage, `receipts/${user.uid}/${vehicle.id}/${Date.now()}_${file.name}`);
-        // Upload
-        await uploadBytes(storageRef, file);
-        // Get URL
-        fileUrl = await getDownloadURL(storageRef);
-      }
-
-      // Save to Database
-      await addDoc(collection(db, "users", user.uid, "vehicles", vehicle.id, "logs"), {
-        date: form.get("date"),
-        type: form.get("type"),
-        desc: form.get("desc"),
-        cost: parseFloat(form.get("cost") || 0),
-        receipt: fileUrl
-      });
-
-      e.target.reset(); // Clear form
-    } catch (error) {
-      console.error("Upload Error:", error);
-      alert("Error uploading: " + error.message);
-    }
-    
-    setUploading(false);
-  };
-
-  // Updated: Adds Try/Catch to show errors
-  const handleAddDoc = async (e) => {
-    e.preventDefault();
-    setUploading(true);
-
-    try {
-      const form = new FormData(e.target);
-      const file = form.get("file");
-
-      if (!file || file.size === 0) {
-        alert("Please select a file first.");
-        setUploading(false);
-        return;
-      }
-
-      const storageRef = ref(storage, `documents/${user.uid}/${vehicle.id}/${Date.now()}_${file.name}`);
+      const path = type === 'log' ? `receipts/${user.uid}/${vehicle.id}/${Date.now()}_${file.name}` 
+                                  : `documents/${user.uid}/${vehicle.id}/${Date.now()}_${file.name}`;
+      const storageRef = ref(storage, path);
       await uploadBytes(storageRef, file);
-      const fileUrl = await getDownloadURL(storageRef);
+      const url = await getDownloadURL(storageRef);
 
-      await addDoc(collection(db, "users", user.uid, "vehicles", vehicle.id, "documents"), {
-        name: form.get("name"),
-        expiry: form.get("expiry"),
-        url: fileUrl,
-        uploadedAt: new Date().toISOString()
-      });
-
+      const data = type === 'log' 
+        ? { date: form.get("date"), type: form.get("type"), desc: form.get("desc"), cost: parseFloat(form.get("cost")||0), receipt: url }
+        : { name: form.get("name"), expiry: form.get("expiry"), url, uploadedAt: new Date().toISOString() };
+        
+      await addDoc(collection(db, "users", user.uid, "vehicles", vehicle.id, type === 'log' ? "logs" : "documents"), data);
+      showToast(type === 'log' ? "Log added successfully" : "Document saved successfully");
       e.target.reset();
-    } catch (error) {
-      console.error("Upload Error:", error);
-      alert("Error uploading: " + error.message);
-    }
-
+    } catch (err) { showToast(err.message, "error"); }
     setUploading(false);
-  };
-
-  const deleteItem = async (col, id) => {
-    if(confirm("Delete this entry?")) await deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, col, id));
-  };
-
-  const getStatusColor = (dateStr) => {
-    const days = calculateDays(dateStr);
-    if (!days) return '#666'; 
-    if (days < 0) return 'red'; 
-    if (days < 30) return 'orange'; 
-    return 'green'; 
   };
 
   return (
-    <div className="dashboard-grid">
-      <div className="bento-card">
-         <div className="car-plate">{vehicle.registration}</div>
-         <h2 style={{margin:0}}>{vehicle.make}</h2>
-         <p style={{marginTop:0}}>{vehicle.model}</p>
-         <hr style={{borderColor:'#eee'}}/>
-
-         <div className="stat-group">
-            <div className="stat-label">MOT Expiry</div>
-            <div className="stat-value" style={{color: getStatusColor(vehicle.motExpiry)}}>
-              {formatDate(vehicle.motExpiry)}
-            </div>
+    <div className="dashboard-grid fade-in">
+      <div className="bento-card sidebar-sticky">
+         <div className="plate-wrapper"><div className="car-plate">{vehicle.registration}</div></div>
+         <h2>{vehicle.make}</h2>
+         <p>{vehicle.model}</p>
+         <div style={{margin:'20px 0'}}>
+           <div className="stat-row">
+             <span className="stat-label">MOT Expiry</span>
+             <Badge date={vehicle.motExpiry} />
+           </div>
+           <div className="stat-row">
+             <span className="stat-label">Tax Expiry</span>
+             <DateInput value={vehicle.taxExpiry} onChange={v => updateDate('taxExpiry', v)} />
+           </div>
+           <div className="stat-row">
+             <span className="stat-label">Insurance</span>
+             <DateInput value={vehicle.insuranceExpiry} onChange={v => updateDate('insuranceExpiry', v)} />
+           </div>
          </div>
-
-         {/* --- TAX INPUT --- */}
-         <div className="stat-group">
-            <div className="stat-label">Road Tax Expiry</div>
-            <input 
-              type="date" 
-              // value must match YYYY-MM-DD for the input to show it
-              value={vehicle.taxExpiry || ""} 
-              onChange={(e) => updateDate('taxExpiry', e.target.value)}
-              style={{marginBottom:'5px'}}
-            />
-            {/* We show the prettified DD/MM/YYYY below the input */}
-            <div className="stat-value" style={{fontSize:'1rem', color: getStatusColor(vehicle.taxExpiry)}}>
-              {vehicle.taxExpiry ? formatDate(vehicle.taxExpiry) : "Set Date 👆"}
-            </div>
-         </div>
-
-         {/* --- INSURANCE INPUT --- */}
-         <div className="stat-group">
-            <div className="stat-label">Insurance Expiry</div>
-            <input 
-              type="date" 
-              value={vehicle.insuranceExpiry || ""} 
-              onChange={(e) => updateDate('insuranceExpiry', e.target.value)}
-              style={{marginBottom:'5px'}}
-            />
-            <div className="stat-value" style={{fontSize:'1rem', color: getStatusColor(vehicle.insuranceExpiry)}}>
-              {vehicle.insuranceExpiry ? formatDate(vehicle.insuranceExpiry) : "Set Date 👆"}
-            </div>
-         </div>
-
-         <div style={{marginTop: '30px', paddingTop: '20px', borderTop: '1px solid #eee'}}>
-           <button onClick={onDelete} className="btn btn-danger" style={{width: '100%'}}>Delete Vehicle</button>
-         </div>
+         <button onClick={onDelete} className="btn btn-danger btn-full btn-sm">Delete Vehicle</button>
       </div>
 
       <div>
-        <div style={{display:'flex', gap:'10px', marginBottom:'20px'}}>
-          <button onClick={() => setTab("logs")} className={`btn ${tab==='logs' ? 'btn-primary' : 'btn-secondary'}`}>Service History</button>
-          <button onClick={() => setTab("docs")} className={`btn ${tab==='docs' ? 'btn-primary' : 'btn-secondary'}`}>Important Docs</button>
+        <div className="tabs">
+          <button onClick={() => setTab("logs")} className={`tab-btn ${tab==='logs'?'active':''}`}>Service History</button>
+          <button onClick={() => setTab("docs")} className={`tab-btn ${tab==='docs'?'active':''}`}>Documents</button>
         </div>
 
-        {tab === 'logs' && (
+        {tab === 'logs' ? (
           <>
-            <div className="bento-card">
-              <h3>Add Log</h3>
-              <form onSubmit={handleAddLog} style={{display:'grid', gap:'10px', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))'}}>
+            <form onSubmit={e => handleUpload(e, 'log')} className="bento-card" style={{marginBottom:'24px'}}>
+              <h3>Add New Entry</h3>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px'}}>
                 <input type="date" name="date" required />
-                <select name="type"><option>Service</option><option>Repair</option><option>MOT</option></select>
-                <input type="number" step="0.01" name="cost" placeholder="£ Cost" />
-                <input name="desc" placeholder="Description" style={{gridColumn:'1/-1'}} required />
-                <input type="file" name="file" style={{gridColumn:'1/-1'}} />
-                <button disabled={uploading} className="btn btn-primary" style={{gridColumn:'1/-1'}}>
-                  {uploading ? "Saving..." : "Add Log"}
-                </button>
-              </form>
-            </div>
-            <div className="bento-card" style={{marginTop:'20px'}}>
+                <select name="type"><option>Service</option><option>Repair</option><option>MOT</option><option>Part</option></select>
+              </div>
+              <input name="desc" placeholder="Description (e.g. Brake Pads)" required style={{marginBottom:'12px'}} />
+              <div style={{display:'grid', gridTemplateColumns:'100px 1fr', gap:'12px'}}>
+                <input type="number" step="0.01" name="cost" placeholder="£0.00" />
+                <div className="file-upload-box">
+                   <span>{uploading ? "Uploading..." : "Attach Receipt (Click)"}</span>
+                   <input type="file" name="file" />
+                </div>
+              </div>
+              <button disabled={uploading} className="btn btn-primary btn-full" style={{marginTop:'12px'}}>
+                {uploading ? <div className="spinner"></div> : "Save Entry"}
+              </button>
+            </form>
+
+            <div className="list-container">
+              {logs.length === 0 && <EmptyState text="No service history logged yet." />}
               {logs.map(log => (
-                <div key={log.id} className="log-row">
-                   <div style={{fontWeight:'bold'}}>{formatDate(log.date)}</div>
-                   <div>{log.type}</div>
-                   <div>{log.desc}</div>
-                   <div>£{log.cost}</div>
-                   <div>{log.receipt && <a href={log.receipt} target="_blank" style={{color:'blue'}}>View</a>}</div>
-                   <button onClick={() => deleteItem('logs', log.id)} className="btn-danger">X</button>
+                <div key={log.id} className="list-item">
+                  <div style={{width:'100px', fontWeight:'600'}}>{formatDate(log.date)}</div>
+                  <div style={{width:'80px'}}><span className="stat-badge badge-grey">{log.type}</span></div>
+                  <div style={{flex:1, fontWeight:'500'}}>{log.desc}</div>
+                  <div style={{width:'80px', fontWeight:'700'}}>£{log.cost}</div>
+                  <div style={{display:'flex', gap:'10px'}}>
+                    {log.receipt && <a href={log.receipt} target="_blank" className="btn btn-secondary btn-sm">Receipt</a>}
+                    <button onClick={() => deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, "logs", log.id))} className="btn btn-danger btn-sm">×</button>
+                  </div>
                 </div>
               ))}
             </div>
           </>
-        )}
-
-        {tab === 'docs' && (
+        ) : (
           <>
-            <div className="bento-card">
-              <h3>Upload Document</h3>
-              <form onSubmit={handleAddDoc} style={{display:'grid', gap:'10px'}}>
-                <input name="name" placeholder="Doc Name (e.g. V5C)" required />
-                <label style={{fontSize:'0.8em'}}>Expiry Date (Optional):</label>
-                <input type="date" name="expiry" />
-                <input type="file" name="file" required />
-                <button disabled={uploading} className="btn btn-primary">
-                   {uploading ? "Uploading..." : "Save Document"}
-                </button>
-              </form>
-            </div>
-            <div className="bento-card" style={{marginTop:'20px'}}>
-              {docs.map(doc => (
-                <div key={doc.id} className="log-row" style={{gridTemplateColumns: '1fr 1fr 1fr 50px'}}>
-                   <div style={{fontWeight:'bold'}}>{doc.name}</div>
-                   <div>{doc.expiry ? `Exp: ${formatDate(doc.expiry)}` : 'No Expiry'}</div>
-                   <a href={doc.url} target="_blank" className="btn btn-secondary" style={{textAlign:'center'}}>Download</a>
-                   <button onClick={() => deleteItem('documents', doc.id)} className="btn-danger">X</button>
-                </div>
-              ))}
+            <form onSubmit={e => handleUpload(e, 'doc')} className="bento-card" style={{marginBottom:'24px'}}>
+               <h3>Upload Document</h3>
+               <div style={{display:'grid', gap:'12px'}}>
+                 <input name="name" placeholder="Document Name (e.g. V5C Logbook)" required />
+                 <input type="date" name="expiry" />
+                 <div className="file-upload-box">
+                   <span>{uploading ? "Uploading..." : "Select File (PDF/Image)"}</span>
+                   <input type="file" name="file" required />
+                 </div>
+                 <button disabled={uploading} className="btn btn-primary btn-full">
+                    {uploading ? <div className="spinner"></div> : "Save Document"}
+                 </button>
+               </div>
+            </form>
+            <div className="list-container">
+               {docs.length === 0 && <EmptyState text="No documents uploaded." />}
+               {docs.map(doc => (
+                 <div key={doc.id} className="list-item">
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:'600'}}>{doc.name}</div>
+                      <div style={{fontSize:'0.85rem', color:'#64748b'}}>{doc.expiry ? `Expires: ${formatDate(doc.expiry)}` : 'No Expiry'}</div>
+                    </div>
+                    <div style={{display:'flex', gap:'10px'}}>
+                      <a href={doc.url} target="_blank" className="btn btn-secondary btn-sm">Download</a>
+                      <button onClick={() => deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, "documents", doc.id))} className="btn btn-danger btn-sm">×</button>
+                    </div>
+                 </div>
+               ))}
             </div>
           </>
         )}
@@ -425,5 +344,32 @@ function DashboardView({ user, vehicle, onDelete }) {
     </div>
   );
 }
+
+// --- HELPERS ---
+const formatDate = (s) => s ? new Date(s).toLocaleDateString('en-GB') : '-';
+const daysLeft = (s) => s ? Math.ceil((new Date(s) - new Date()) / (86400000)) : null;
+
+const Badge = ({ date, label }) => {
+  const d = daysLeft(date);
+  if (d === null) return <span className="stat-badge badge-grey">{label ? label : "Set Date"}</span>;
+  const color = d < 0 ? 'badge-red' : d < 30 ? 'badge-orange' : 'badge-green';
+  const text = d < 0 ? 'Expired' : `${d} days`;
+  return <div style={{textAlign:'right'}}>
+    <div className={`stat-badge ${color}`}>{text}</div>
+    <div style={{fontSize:'0.75rem', marginTop:'2px', color:'#64748b'}}>{formatDate(date)}</div>
+  </div>;
+};
+
+const DateInput = ({ value, onChange }) => (
+  <input type="date" value={value || ""} onChange={e => onChange(e.target.value)} 
+    style={{width:'140px', padding:'6px 10px', fontSize:'0.85rem', marginBottom:0}} />
+);
+
+const EmptyState = ({ text }) => (
+  <div style={{textAlign:'center', padding:'40px', color:'#94a3b8', border:'2px dashed #e2e8f0', borderRadius:'12px'}}>
+    <div style={{fontSize:'2rem', marginBottom:'10px'}}>📂</div>
+    {text}
+  </div>
+);
 
 export default App;
