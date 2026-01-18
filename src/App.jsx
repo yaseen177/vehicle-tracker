@@ -70,7 +70,6 @@ function MainApp() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      // --- SAVE FULL DATA ---
       const newCar = {
         registration: data.registration || reg,
         make: data.make,
@@ -83,7 +82,7 @@ function MainApp() {
         motTests: data.motTests || [], 
         
         motExpiry: data.motTests ? data.motTests[0].expiryDate : "",
-        taxExpiry: "", // Ready for your future Tax API integration
+        taxExpiry: "",
         insuranceExpiry: "",
         addedAt: new Date().toISOString()
       };
@@ -232,7 +231,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     setUploading(false);
   };
 
-  // --- NEW: GENERATE SALE BUNDLE PDF ---
+  // --- SALE BUNDLE GENERATOR ---
   const generateSaleBundle = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -255,39 +254,52 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     doc.setFont("helvetica", "normal");
     doc.text(`${vehicle.make} ${vehicle.model} (${vehicle.colour})`, 20, 48);
     doc.text(`Engine: ${vehicle.engineSize || '-'}cc  |  Fuel: ${vehicle.fuelType || '-'}`, 20, 54);
-    doc.text(`Manufactured: ${manufactureYear}`, 20, 60);
+    const manYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : 'Unknown';
+    doc.text(`Manufactured: ${manYear}`, 20, 60);
 
     let currentY = 80;
 
-    // 1. Service History Table
+    // 1. Service History
     doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
-    doc.text("Service & Maintenance History", 14, currentY);
+    doc.text("Service & Maintenance", 14, currentY);
     
-    const serviceRows = logs.map(l => [
-      formatDate(l.date), 
-      l.type, 
-      l.desc, 
-      `£${l.cost.toFixed(2)}`,
-      l.receipt ? "Receipt Attached" : "-"
+    autoTable(doc, {
+      startY: currentY + 5,
+      head: [['Date', 'Type', 'Description', 'Cost']],
+      body: logs.map(l => [formatDate(l.date), l.type, l.desc, `£${l.cost.toFixed(2)}`]),
+      theme: 'striped',
+      headStyles: { fillColor: [59, 130, 246] }
+    });
+    currentY = doc.lastAutoTable.finalY + 15;
+
+    // 2. Attached Documents (The Inventory)
+    doc.text("Document Inventory", 14, currentY);
+    
+    const docRows = docs.map(d => [
+      d.name,
+      d.expiry ? formatDate(d.expiry) : 'N/A',
+      "View Document" // This text becomes a link
     ]);
 
     autoTable(doc, {
       startY: currentY + 5,
-      head: [['Date', 'Type', 'Description', 'Cost', 'Notes']],
-      body: serviceRows,
-      theme: 'striped',
-      headStyles: { fillColor: [59, 130, 246] }
+      head: [['Document Name', 'Expiry Date', 'Access Link']],
+      body: docRows,
+      theme: 'grid',
+      headStyles: { fillColor: [16, 185, 129] }, // Green for docs
+      didDrawCell: (data) => {
+        // Make the "View Document" cell clickable
+        if (data.section === 'body' && data.column.index === 2) {
+          const url = docs[data.row.index].url;
+          doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url });
+        }
+      }
     });
+    currentY = doc.lastAutoTable.finalY + 15;
 
-    currentY = doc.lastAutoTable.finalY + 20;
-
-    // 2. MOT History Table
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text("MOT History", 14, currentY);
-
-    // Limit to last 10 MOTs to save space
+    // 3. MOT History (Last 15)
+    doc.text("Recent MOT History", 14, currentY);
     const motRows = (vehicle.motTests || []).slice(0, 15).map(m => [
       formatDate(m.completedDate),
       m.testResult,
@@ -299,13 +311,12 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
       startY: currentY + 5,
       head: [['Date', 'Result', 'Mileage', 'Test Ref']],
       body: motRows,
-      theme: 'grid',
-      headStyles: { fillColor: [40, 40, 40] } // Dark Grey for MOT
+      theme: 'plain',
+      headStyles: { fillColor: [40, 40, 40] } 
     });
     
-    // Save
-    doc.save(`${vehicle.registration}_SaleBundle.pdf`);
-    showToast("Bundle Generated!");
+    doc.save(`${vehicle.registration}_FullReport.pdf`);
+    showToast("Report Downloaded!");
   };
 
   const manufactureYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : (vehicle.manufactureDate ? new Date(vehicle.manufactureDate).getFullYear() : 'Unknown');
