@@ -5,7 +5,7 @@ import { doc, setDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc,
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, rgb } from 'pdf-lib'; // Added 'rgb'
 import "./App.css";
 
 // --- TOAST NOTIFICATION ---
@@ -232,7 +232,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     setUploading(false);
   };
 
-  // --- UPDATED: MERGE PDFS & IMAGES ---
+  // --- UPDATED: GENERATE SALE BUNDLE (With Detailed Cover Sheets) ---
   const generateSaleBundle = async () => {
     showToast("Generating Bundle... (This may take a moment)", "success");
     
@@ -312,14 +312,25 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
       });
 
       // -----------------------------------------------------------
-      // 2. IMAGE EMBEDDING (Still easiest to do inside jsPDF)
+      // 2. PREPARE ATTACHMENTS (Pass all details this time)
       // -----------------------------------------------------------
       const allAttachments = [
-        ...docs.map(d => ({ name: d.name, url: d.url, type: 'doc' })),
-        ...logs.filter(l => l.receipt).map(l => ({ name: `Receipt: ${l.desc}`, url: l.receipt, type: 'log' }))
+        ...docs.map(d => ({ 
+            type: 'doc',
+            name: d.name, 
+            url: d.url, 
+            expiry: d.expiry 
+        })),
+        ...logs.filter(l => l.receipt).map(l => ({ 
+            type: 'log',
+            name: `Receipt: ${l.desc}`, 
+            url: l.receipt, 
+            date: l.date,
+            cost: l.cost,
+            desc: l.desc
+        }))
       ];
 
-      // Separate PDFs from Images
       const pdfAttachments = [];
       const imageAttachments = [];
 
@@ -329,7 +340,9 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
         else if (item.url.match(/\.(jpeg|jpg|png|webp)/i) || item.url.includes('alt=media')) imageAttachments.push(item);
       });
 
-      // Embed Images into the main report now
+      // -----------------------------------------------------------
+      // 3. IMAGE EMBEDDING (jsPDF)
+      // -----------------------------------------------------------
       for (const img of imageAttachments) {
         try {
           const imgData = await fetch(img.url).then(res => res.blob()).then(blob => {
@@ -342,54 +355,65 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
 
           doc.addPage();
           doc.setFontSize(16);
+          doc.setFont("helvetica", "bold");
           doc.text(`Appendix: ${img.name}`, 14, 20);
           
+          // Add Details below title
+          doc.setFontSize(11);
+          doc.setFont("helvetica", "normal");
+          if(img.type === 'log') {
+             doc.text(`Date: ${formatDate(img.date)}`, 14, 28);
+             doc.text(`Description: ${img.desc}`, 14, 34);
+             doc.text(`Amount: £${img.cost.toFixed(2)}`, 14, 40);
+          } else {
+             doc.text(`Expiry Date: ${img.expiry ? formatDate(img.expiry) : 'N/A'}`, 14, 28);
+          }
+
           const imgProps = doc.getImageProperties(imgData);
           const pdfWidth = pageWidth - 40;
           const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
           
-          if (pdfHeight > pageHeight - 40) {
-             const scale = (pageHeight - 40) / pdfHeight;
-             doc.addImage(imgData, 'JPEG', 20, 30, pdfWidth * scale, pdfHeight * scale);
+          // Shift image down to make room for text (y = 50)
+          if (pdfHeight > pageHeight - 60) {
+             const scale = (pageHeight - 60) / pdfHeight;
+             doc.addImage(imgData, 'JPEG', 20, 50, pdfWidth * scale, pdfHeight * scale);
           } else {
-             doc.addImage(imgData, 'JPEG', 20, 30, pdfWidth, pdfHeight);
+             doc.addImage(imgData, 'JPEG', 20, 50, pdfWidth, pdfHeight);
           }
         } catch (e) { console.error("Error embedding image", e); }
       }
 
       // -----------------------------------------------------------
-      // 3. PDF MERGING (The Magic Step)
+      // 4. PDF MERGING (pdf-lib)
       // -----------------------------------------------------------
-      
-      // A. Convert our jsPDF report to bytes
       const reportBytes = doc.output('arraybuffer');
-
-      // B. Create a new "Master" PDF with pdf-lib
       const mergedPdf = await PDFDocument.create();
-
-      // C. Load the Summary Report we just made
       const reportPdf = await PDFDocument.load(reportBytes);
       const reportPages = await mergedPdf.copyPages(reportPdf, reportPdf.getPageIndices());
       reportPages.forEach((page) => mergedPdf.addPage(page));
 
-      // D. Loop through external PDFs, fetch them, and merge them
       for (const item of pdfAttachments) {
         try {
-          // Fetch the external PDF file
           const externalPdfBytes = await fetch(item.url).then(res => res.arrayBuffer());
-          
-          // Load it
           const externalPdf = await PDFDocument.load(externalPdfBytes);
-          
-          // Copy all pages
           const externalPages = await mergedPdf.copyPages(externalPdf, externalPdf.getPageIndices());
           
-          // Add a "Title Page" for this document before the actual pages (Optional, but looks nice)
+          // --- CREATE COVER SHEET FOR PDF ---
           const titlePage = mergedPdf.addPage();
-          titlePage.drawText(`Appendix: ${item.name}`, { x: 50, y: 700, size: 24 });
-          titlePage.drawText(`(Original Document Attached Next)`, { x: 50, y: 670, size: 12 });
+          const { width, height } = titlePage.getSize();
+          
+          titlePage.drawText(`Appendix: ${item.name}`, { x: 50, y: height - 100, size: 24 });
+          
+          if(item.type === 'log') {
+            titlePage.drawText(`Date: ${formatDate(item.date)}`, { x: 50, y: height - 150, size: 18 });
+            titlePage.drawText(`Description: ${item.desc}`, { x: 50, y: height - 180, size: 18 });
+            titlePage.drawText(`Amount: £${item.cost.toFixed(2)}`, { x: 50, y: height - 210, size: 18 });
+          } else {
+            titlePage.drawText(`Expiry Date: ${item.expiry ? formatDate(item.expiry) : 'N/A'}`, { x: 50, y: height - 150, size: 18 });
+          }
 
-          // Paste the pages
+          titlePage.drawText(`(Original Document Attached Next)`, { x: 50, y: height - 300, size: 12, color: rgb(0.5, 0.5, 0.5) });
+
           externalPages.forEach((page) => mergedPdf.addPage(page));
 
         } catch (err) {
@@ -398,7 +422,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
         }
       }
 
-      // 4. Save the Final Bundle
+      // Save
       const pdfBytes = await mergedPdf.save();
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const link = document.createElement('a');
