@@ -372,3 +372,10 @@ input[type="date"] {
   .list-item > div:last-child { width: 100%; display: flex; justify-content: space-between; padding-top: 12px; border-top: 1px solid var(--border); }
   .app-wrapper { padding: 20px; }
 }
+/* --- FILE SELECTED STATE --- */
+.file-upload-box.has-file {
+  border-color: var(--success);
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+  font-weight: 600;
+}
