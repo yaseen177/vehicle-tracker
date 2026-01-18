@@ -370,24 +370,25 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
 }
 
 // --- UPDATED MOT CARD (Expandable) ---
+// --- UPDATED: Always-Expandable MOT Card ---
 const MotTestCard = ({ test }) => {
   const [isOpen, setIsOpen] = useState(false);
   
+  // Safe Data Access
   const result = test.testResult || test.status || "UNKNOWN";
   const date = test.completedDate || test.testDate || null;
   const mileage = test.odometerValue ? `${test.odometerValue} ${test.odometerUnit || 'mi'}` : "Unknown Mileage";
   const testNo = test.motTestNumber || "No Ref";
   const comments = test.rfrAndComments || [];
-  const hasDetails = comments.length > 0;
 
   return (
     <div className={`mot-card ${isOpen ? 'mot-expanded' : ''}`} style={{marginBottom: '16px'}}>
       
-      {/* HEADER: Click to toggle */}
+      {/* HEADER: Always Clickable */}
       <div 
         className="mot-card-header" 
-        onClick={() => hasDetails && setIsOpen(!isOpen)} 
-        style={{ cursor: hasDetails ? 'pointer' : 'default', display:'flex', justifyContent:'space-between', width:'100%' }}
+        onClick={() => setIsOpen(!isOpen)} 
+        style={{ cursor: 'pointer', display:'flex', justifyContent:'space-between', width:'100%' }}
       >
         <div>
            <div style={{fontWeight:'700', fontSize:'1.1rem', color:'#fff', marginBottom:'6px'}}>
@@ -401,6 +402,7 @@ const MotTestCard = ({ test }) => {
         </div>
         
         <div style={{display:'flex', alignItems:'center', gap:'20px'}}>
+           {/* Result Badge */}
            <div className={`mot-result ${result === 'PASSED' ? 'result-pass' : 'result-fail'}`} 
                 style={{
                   background: result === 'PASSED' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
@@ -411,31 +413,34 @@ const MotTestCard = ({ test }) => {
              {result}
            </div>
 
-           {hasDetails && (
-             <div className="mot-expand-icon" style={{color: '#fff', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)'}}>
-               ▼
-             </div>
-           )}
+           {/* Always show Arrow */}
+           <div className="mot-expand-icon" style={{color: '#fff', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)'}}>
+             ▼
+           </div>
         </div>
       </div>
 
-      {/* DETAILS: Shown when expanded */}
-      {isOpen && hasDetails && (
+      {/* DETAILS PANEL */}
+      {isOpen && (
         <div className="mot-details" style={{padding:'20px', borderTop:'1px solid rgba(255,255,255,0.1)'}}>
-           <div className="rfr-list">
-              {comments.map((item, i) => (
-                 <div key={i} className="rfr-item" style={{marginBottom:'10px', display:'flex', gap:'10px', alignItems:'flex-start'}}>
-                    <span className={`rfr-type ${item.type === 'FAIL' ? 'type-fail' : 'type-advisory'}`}
-                          style={{
-                            background: item.type === 'FAIL' ? '#b91c1c' : '#ca8a04',
-                            color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', minWidth:'80px', textAlign:'center'
-                          }}>
-                      {item.type}
-                    </span>
-                    <span style={{color:'#e2e8f0', fontSize:'0.95rem', lineHeight:'1.5'}}>{item.text}</span>
-                 </div>
-              ))}
-           </div>
+           {comments.length === 0 ? (
+             <p style={{fontStyle:'italic', color:'#64748b', margin:0}}>No advisories or failures recorded for this test.</p>
+           ) : (
+             <div className="rfr-list">
+                {comments.map((item, i) => (
+                   <div key={i} className="rfr-item" style={{marginBottom:'10px', display:'flex', gap:'10px', alignItems:'flex-start'}}>
+                      <span className={`rfr-type ${item.type === 'FAIL' ? 'type-fail' : 'type-advisory'}`}
+                            style={{
+                              background: item.type === 'FAIL' ? '#b91c1c' : '#ca8a04',
+                              color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', minWidth:'80px', textAlign:'center'
+                            }}>
+                        {item.type}
+                      </span>
+                      <span style={{color:'#e2e8f0', fontSize:'0.95rem', lineHeight:'1.5'}}>{item.text}</span>
+                   </div>
+                ))}
+             </div>
+           )}
         </div>
       )}
     </div>
