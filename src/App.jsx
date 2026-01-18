@@ -373,46 +373,34 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
 }
 
 // --- NEW COMPONENT: Expandable MOT Card ---
+// This component handles the "Click to Expand" logic
 const MotTestCard = ({ test }) => {
   const [isOpen, setIsOpen] = useState(false);
+  
+  // We only show the arrow/pointer IF there are actually comments to show
   const hasDetails = test.rfrAndComments && test.rfrAndComments.length > 0;
 
   return (
     <div className={`mot-card ${isOpen ? 'mot-expanded' : ''}`}>
-      {/* Header acts as the button */}
-      <div className="mot-card-header" onClick={() => hasDetails && setIsOpen(!isOpen)} style={{ cursor: hasDetails ? 'pointer' : 'default' }}>
-        <div>
-           <div style={{fontWeight:'600', fontSize:'1.1rem', color:'white', marginBottom:'6px'}}>
-             {formatDate(test.completedDate)}
-           </div>
-           <div className="mot-meta">
-              <div>Mileage: <span>{test.odometerValue} {test.odometerUnit}</span></div>
-              <div>Test No: <span>{test.motTestNumber}</span></div>
-           </div>
-        </div>
-        
-        <div style={{display:'flex', alignItems:'center', gap:'20px'}}>
-           <div className={`mot-result ${test.testResult === 'PASSED' ? 'result-pass' : 'result-fail'}`}>
-             {test.testResult}
-           </div>
-           {/* Only show Chevron if there are details to expand */}
-           {hasDetails && (
-             <div className="mot-expand-icon">
-               {isOpen ? '▲' : '▼'}
-             </div>
-           )}
-        </div>
+      {/* Clicking the header toggles 'isOpen' */}
+      <div className="mot-card-header" onClick={() => hasDetails && setIsOpen(!isOpen)}>
+         {/* ... (Date, Result, Mileage) ... */}
+         
+         {/* The Arrow Icon */}
+         {hasDetails && <div className="mot-expand-icon">{isOpen ? '▲' : '▼'}</div>}
       </div>
 
-      {/* Expandable Content */}
+      {/* The Hidden Details List */}
       {isOpen && hasDetails && (
         <div className="mot-details">
            <div className="rfr-list">
               {test.rfrAndComments.map((item, i) => (
                  <div key={i} className="rfr-item">
-                    <span className={`rfr-type ${item.type === 'FAIL' ? 'type-fail' : (item.type === 'MINOR' ? 'type-minor' : 'type-advisory')}`}>
+                    {/* Badge: FAIL / ADVISORY / MINOR */}
+                    <span className={`rfr-type ${item.type === 'FAIL' ? 'type-fail' : 'type-advisory'}`}>
                       {item.type}
                     </span>
+                    {/* The Text: e.g. "Front Tyre worn..." */}
                     <span>{item.text}</span>
                  </div>
               ))}
