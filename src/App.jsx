@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { auth, googleProvider, db, storage } from "./firebase";
-import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 import { doc, setDoc, getDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import "./App.css";
+// Make sure GoogleAuthProvider is in this list
+import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -33,8 +34,19 @@ function App() {
   };
 
   const handleLogin = async () => {
-    googleProvider.setCustomParameters({ prompt: 'select_account' });
-    try { await signInWithPopup(auth, googleProvider); } catch (e) { console.error(e); }
+    // Create a NEW provider instance every time the button is clicked
+    const provider = new GoogleAuthProvider();
+    
+    // Force the "Choose Account" screen
+    provider.setCustomParameters({
+      prompt: 'select_account'
+    });
+
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (e) {
+      console.error("Login Error:", e);
+    }
   };
 
   // --- ADD NEW VEHICLE ---
