@@ -3,8 +3,6 @@ import { auth, googleProvider, db, storage } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, GoogleAuthProvider } from "firebase/auth";
 import { doc, setDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import jsPDF from "jspdf";
-import "jspdf-autotable";
 import "./App.css";
 
 // --- TOAST NOTIFICATION SYSTEM ---
@@ -172,7 +170,7 @@ function GarageView({ vehicles, onOpen, onAdd, loading }) {
             value={input} 
             onChange={e => setInput(e.target.value.toUpperCase())} 
             placeholder="AA19 AAA" 
-            style={{textAlign:'center', textTransform:'uppercase', fontSize:'1.1rem', letterSpacing:'1px'}} 
+            style={{textAlign:'center', textTransform:'uppercase', fontSize:'1.1rem', letterSpacing:'1px', marginBottom:0}} 
           />
           <button onClick={() => { onAdd(input); setInput(""); }} disabled={loading} className="btn btn-primary">
             {loading ? <div className="spinner"></div> : "Add"}
@@ -213,7 +211,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
 
   const updateDate = async (field, value) => {
     await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), { [field]: value });
-    showToast(`${field === 'taxExpiry' ? 'Tax' : 'Insurance'} date updated!`);
+    showToast(`${field === 'taxExpiry' ? 'Tax' : 'Insurance'} updated`);
   };
 
   const handleUpload = async (e, type) => {
@@ -235,7 +233,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
         : { name: form.get("name"), expiry: form.get("expiry"), url, uploadedAt: new Date().toISOString() };
         
       await addDoc(collection(db, "users", user.uid, "vehicles", vehicle.id, type === 'log' ? "logs" : "documents"), data);
-      showToast(type === 'log' ? "Log added successfully" : "Document saved successfully");
+      showToast(type === 'log' ? "Log added" : "Document saved");
       e.target.reset();
     } catch (err) { showToast(err.message, "error"); }
     setUploading(false);
@@ -243,27 +241,42 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
 
   return (
     <div className="dashboard-grid fade-in">
+      {/* SIDEBAR */}
       <div className="bento-card sidebar-sticky">
          <div className="plate-wrapper"><div className="car-plate">{vehicle.registration}</div></div>
          <h2>{vehicle.make}</h2>
-         <p>{vehicle.model}</p>
-         <div style={{margin:'20px 0'}}>
-           <div className="stat-row">
-             <span className="stat-label">MOT Expiry</span>
-             <Badge date={vehicle.motExpiry} />
+         <p style={{marginBottom:'30px'}}>{vehicle.model}</p>
+         
+         <div style={{borderTop: '1px solid var(--border)', paddingTop: '10px'}}>
+           {/* MOT (Read Only) */}
+           <div className="editable-row" style={{cursor:'default'}}>
+             <div className="row-label">
+               <StatusDot date={vehicle.motExpiry} /> MOT Expiry
+             </div>
+             <div className="row-value">{formatDate(vehicle.motExpiry)}</div>
            </div>
-           <div className="stat-row">
-             <span className="stat-label">Tax Expiry</span>
-             <DateInput value={vehicle.taxExpiry} onChange={v => updateDate('taxExpiry', v)} />
-           </div>
-           <div className="stat-row">
-             <span className="stat-label">Insurance</span>
-             <DateInput value={vehicle.insuranceExpiry} onChange={v => updateDate('insuranceExpiry', v)} />
-           </div>
+
+           {/* TAX (Editable) */}
+           <EditableDateRow 
+             label="Road Tax" 
+             value={vehicle.taxExpiry} 
+             onChange={(val) => updateDate('taxExpiry', val)} 
+           />
+
+           {/* INSURANCE (Editable) */}
+           <EditableDateRow 
+             label="Insurance" 
+             value={vehicle.insuranceExpiry} 
+             onChange={(val) => updateDate('insuranceExpiry', val)} 
+           />
          </div>
-         <button onClick={onDelete} className="btn btn-danger btn-full btn-sm">Delete Vehicle</button>
+
+         <div style={{marginTop:'30px'}}>
+            <button onClick={onDelete} className="btn btn-danger btn-full btn-sm">Delete Vehicle</button>
+         </div>
       </div>
 
+      {/* MAIN CONTENT */}
       <div>
         <div className="tabs">
           <button onClick={() => setTab("logs")} className={`tab-btn ${tab==='logs'?'active':''}`}>Service History</button>
@@ -282,7 +295,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
               <div style={{display:'grid', gridTemplateColumns:'100px 1fr', gap:'12px'}}>
                 <input type="number" step="0.01" name="cost" placeholder="£0.00" />
                 <div className="file-upload-box">
-                   <span>{uploading ? "Uploading..." : "Attach Receipt (Click)"}</span>
+                   <span>{uploading ? "Uploading..." : "Attach Receipt"}</span>
                    <input type="file" name="file" />
                 </div>
               </div>
@@ -295,10 +308,10 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
               {logs.length === 0 && <EmptyState text="No service history logged yet." />}
               {logs.map(log => (
                 <div key={log.id} className="list-item">
-                  <div style={{width:'100px', fontWeight:'600'}}>{formatDate(log.date)}</div>
-                  <div style={{width:'80px'}}><span className="stat-badge badge-grey">{log.type}</span></div>
+                  <div style={{minWidth:'100px', fontWeight:'600'}}>{formatDate(log.date)}</div>
+                  <div style={{minWidth:'80px'}}><span className="stat-badge badge-grey">{log.type}</span></div>
                   <div style={{flex:1, fontWeight:'500'}}>{log.desc}</div>
-                  <div style={{width:'80px', fontWeight:'700'}}>£{log.cost}</div>
+                  <div style={{minWidth:'80px', fontWeight:'700'}}>£{log.cost}</div>
                   <div style={{display:'flex', gap:'10px'}}>
                     {log.receipt && <a href={log.receipt} target="_blank" className="btn btn-secondary btn-sm">Receipt</a>}
                     <button onClick={() => deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, "logs", log.id))} className="btn btn-danger btn-sm">×</button>
@@ -345,8 +358,35 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   );
 }
 
-// --- HELPERS ---
-const formatDate = (s) => s ? new Date(s).toLocaleDateString('en-GB') : '-';
+// --- HELPERS (Defined Once) ---
+
+const EditableDateRow = ({ label, value, onChange }) => {
+  return (
+    <div className="editable-row">
+      <div className="row-label">
+        <StatusDot date={value} /> {label}
+      </div>
+      <div className="row-value">
+        {value ? formatDate(value) : <span style={{color:'var(--accent)', fontSize:'0.9rem'}}>Set Date +</span>}
+      </div>
+      <input 
+        type="date" 
+        className="hidden-date-input"
+        value={value || ""} 
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+};
+
+const StatusDot = ({ date }) => {
+  if (!date) return <span className="status-dot" style={{background:'#e2e8f0'}}></span>;
+  const d = daysLeft(date);
+  const color = d < 0 ? 'dot-red' : d < 30 ? 'dot-orange' : 'dot-green';
+  return <span className={`status-dot ${color}`}></span>;
+};
+
+const formatDate = (s) => s ? new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
 const daysLeft = (s) => s ? Math.ceil((new Date(s) - new Date()) / (86400000)) : null;
 
 const Badge = ({ date, label }) => {
@@ -359,11 +399,6 @@ const Badge = ({ date, label }) => {
     <div style={{fontSize:'0.75rem', marginTop:'2px', color:'#64748b'}}>{formatDate(date)}</div>
   </div>;
 };
-
-const DateInput = ({ value, onChange }) => (
-  <input type="date" value={value || ""} onChange={e => onChange(e.target.value)} 
-    style={{width:'140px', padding:'6px 10px', fontSize:'0.85rem', marginBottom:0}} />
-);
 
 const EmptyState = ({ text }) => (
   <div style={{textAlign:'center', padding:'40px', color:'#94a3b8', border:'2px dashed #e2e8f0', borderRadius:'12px'}}>
