@@ -186,6 +186,8 @@ function GarageView({ vehicles, onOpen, onAdd, loading }) {
   );
 }
 
+// ... (Imports and Top Components remain the same) ...
+
 function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [tab, setTab] = useState("logs");
   const [logs, setLogs] = useState([]);
@@ -230,7 +232,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     setUploading(false);
   };
 
-  // --- DERIVED SPECS ---
+  // Derived Specs
   const manufactureYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : (vehicle.manufactureDate ? new Date(vehicle.manufactureDate).getFullYear() : 'Unknown');
 
   return (
@@ -319,39 +321,14 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
           </>
         )}
 
-        {/* --- NEW MOT HISTORY TAB --- */}
+        {/* --- MOT HISTORY TAB --- */}
         {tab === 'mot' && (
           <div className="fade-in">
              {!vehicle.motTests || vehicle.motTests.length === 0 ? (
-               <EmptyState text="No MOT history found for this vehicle." />
+               <EmptyState text="No MOT history found." />
              ) : (
                vehicle.motTests.map((test, index) => (
-                 <div key={index} className="mot-card">
-                    <div className="mot-header">
-                       <div style={{fontWeight:'600', fontSize:'1.1rem'}}>{formatDate(test.completedDate)}</div>
-                       <div className={`mot-result ${test.testResult === 'PASSED' ? 'result-pass' : 'result-fail'}`}>
-                         {test.testResult}
-                       </div>
-                    </div>
-                    <div className="mot-stat">
-                       <div>Mileage: <span>{test.odometerValue} {test.odometerUnit}</span></div>
-                       <div>Test No: <span>{test.motTestNumber}</span></div>
-                    </div>
-
-                    {/* Show Reasons for Failure / Advisories if any */}
-                    {test.rfrAndComments && test.rfrAndComments.length > 0 && (
-                      <div className="rfr-list">
-                        {test.rfrAndComments.map((item, i) => (
-                           <div key={i} className="rfr-item">
-                              <span className={`rfr-type ${item.type === 'FAIL' ? 'type-fail' : 'type-advisory'}`}>
-                                {item.type === 'FAIL' ? 'FAIL' : 'ADVISORY'}
-                              </span>
-                              <span>{item.text}</span>
-                           </div>
-                        ))}
-                      </div>
-                    )}
-                 </div>
+                 <MotTestCard key={index} test={test} />
                ))
              )}
           </div>
@@ -394,6 +371,57 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     </div>
   );
 }
+
+// --- NEW COMPONENT: Expandable MOT Card ---
+const MotTestCard = ({ test }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const hasDetails = test.rfrAndComments && test.rfrAndComments.length > 0;
+
+  return (
+    <div className={`mot-card ${isOpen ? 'mot-expanded' : ''}`}>
+      {/* Header acts as the button */}
+      <div className="mot-card-header" onClick={() => hasDetails && setIsOpen(!isOpen)} style={{ cursor: hasDetails ? 'pointer' : 'default' }}>
+        <div>
+           <div style={{fontWeight:'600', fontSize:'1.1rem', color:'white', marginBottom:'6px'}}>
+             {formatDate(test.completedDate)}
+           </div>
+           <div className="mot-meta">
+              <div>Mileage: <span>{test.odometerValue} {test.odometerUnit}</span></div>
+              <div>Test No: <span>{test.motTestNumber}</span></div>
+           </div>
+        </div>
+        
+        <div style={{display:'flex', alignItems:'center', gap:'20px'}}>
+           <div className={`mot-result ${test.testResult === 'PASSED' ? 'result-pass' : 'result-fail'}`}>
+             {test.testResult}
+           </div>
+           {/* Only show Chevron if there are details to expand */}
+           {hasDetails && (
+             <div className="mot-expand-icon">
+               {isOpen ? '▲' : '▼'}
+             </div>
+           )}
+        </div>
+      </div>
+
+      {/* Expandable Content */}
+      {isOpen && hasDetails && (
+        <div className="mot-details">
+           <div className="rfr-list">
+              {test.rfrAndComments.map((item, i) => (
+                 <div key={i} className="rfr-item">
+                    <span className={`rfr-type ${item.type === 'FAIL' ? 'type-fail' : (item.type === 'MINOR' ? 'type-minor' : 'type-advisory')}`}>
+                      {item.type}
+                    </span>
+                    <span>{item.text}</span>
+                 </div>
+              ))}
+           </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // --- HELPERS ---
 const EditableDateRow = ({ label, value, onChange }) => (

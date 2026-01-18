@@ -1,18 +1,20 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
-/* --- 1. FORCE CENTER FIX (Crucial) --- */
+/* =========================================
+   1. GLOBAL RESET & LAYOUT FIXES
+   ========================================= */
 html, body {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
-  overflow-x: hidden; /* Prevent horizontal scroll */
+  overflow-x: hidden; /* Prevents horizontal scroll */
 }
 
 #root {
   width: 100%;
   min-height: 100vh;
-  display: flex;       /* This helps center content vertically if needed */
+  display: flex;       
   flex-direction: column;
   align-items: center; /* Centers the app wrapper horizontally */
   background-color: #0f1115;
@@ -20,25 +22,30 @@ html, body {
 
 .app-wrapper {
   width: 100%;
-  max-width: 1400px;   /* Limits width on huge screens */
-  margin: 0 auto;      /* Double ensures centering */
-  padding: 40px 20px;  /* Adds breathing room on sides */
+  max-width: 1400px;   /* Limits width on large screens */
+  margin: 0 auto;      
+  padding: 40px 20px;  
   flex: 1;
 }
 
-/* --- 2. REST OF THE APP STYLES --- */
+/* =========================================
+   2. VARIABLES & THEME
+   ========================================= */
 :root {
   --bg-app: #0f1115;
   --surface: #181b21;
   --surface-highlight: #232730; 
   --text-main: #ffffff;
   --text-muted: #94a3b8;
+  
   --primary: #3b82f6;
   --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  
   --border: rgba(255, 255, 255, 0.08);
   --success: #10b981;
   --warning: #f59e0b;
   --danger: #ef4444;
+  
   --radius-xl: 24px;
   --radius-lg: 16px;
   --radius-md: 12px;
@@ -56,7 +63,9 @@ body {
 .fade-in { animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
-/* --- HEADER --- */
+/* =========================================
+   3. HEADER & LOGO
+   ========================================= */
 .top-nav {
   display: flex;
   justify-content: space-between;
@@ -77,10 +86,12 @@ body {
   cursor: pointer;
 }
 
-/* --- DASHBOARD LAYOUT --- */
+/* =========================================
+   4. DASHBOARD GRID & CARDS
+   ========================================= */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 400px 1fr; /* Sidebar Fixed, Content Fills Rest */
+  grid-template-columns: 400px 1fr; /* Sidebar fixed width, Content fills rest */
   gap: 40px;
   align-items: start;
   width: 100%;
@@ -93,7 +104,6 @@ body {
   width: 100%;
 }
 
-/* --- CARDS --- */
 .bento-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -117,13 +127,19 @@ body {
   box-shadow: 0 15px 30px -10px rgba(59, 130, 246, 0.15);
 }
 
-/* --- TYPOGRAPHY --- */
+/* =========================================
+   5. TYPOGRAPHY & SPECS
+   ========================================= */
 h1, h2 { margin: 0; font-weight: 600; letter-spacing: -0.5px; color: white; }
 h2 { font-size: 1.5rem; margin-bottom: 8px; }
 h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 20px; color: white; }
 p { color: var(--text-muted); margin: 0; font-size: 0.95rem; line-height: 1.5; }
 
-/* --- UK PLATE --- */
+.spec-box { background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border: 1px solid var(--border); }
+.spec-label { font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 4px; }
+.spec-val { font-size: 1rem; font-weight: 600; color: white; }
+
+/* UK Plate Style */
 .plate-wrapper {
   background: #fbbf24;
   padding: 4px;
@@ -144,7 +160,9 @@ p { color: var(--text-muted); margin: 0; font-size: 0.95rem; line-height: 1.5; }
   letter-spacing: 2px;
 }
 
-/* --- INPUTS --- */
+/* =========================================
+   6. INPUTS & BUTTONS
+   ========================================= */
 input, select {
   width: 100%;
   padding: 16px;
@@ -163,7 +181,7 @@ input:focus, select:focus {
   background: var(--surface-highlight);
 }
 
-/* Date Picker Icon Override */
+/* White Calendar Icon for Date Input */
 input[type="date"] {
   background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="%2394a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>');
   background-position: right 16px center;
@@ -171,7 +189,6 @@ input[type="date"] {
   color-scheme: dark;
 }
 
-/* --- BUTTONS --- */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -193,7 +210,9 @@ input[type="date"] {
 .btn-full { width: 100%; }
 .btn-sm { padding: 8px 16px; font-size: 0.85rem; }
 
-/* --- EDITABLE ROWS --- */
+/* =========================================
+   7. EDITABLE ROWS & LISTS
+   ========================================= */
 .editable-row {
   display: flex;
   justify-content: space-between;
@@ -209,7 +228,6 @@ input[type="date"] {
 .row-value { font-weight: 600; color: white; transition: 0.2s; }
 .hidden-date-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
-/* --- LISTS --- */
 .list-item {
   background: var(--surface-highlight);
   border: 1px solid var(--border);
@@ -223,7 +241,7 @@ input[type="date"] {
 }
 .list-item:hover { border-color: rgba(255,255,255,0.2); }
 
-/* --- TABS --- */
+/* Tabs */
 .tabs {
   background: var(--surface-highlight);
   padding: 4px;
@@ -243,7 +261,75 @@ input[type="date"] {
 }
 .tab-btn.active { background: var(--bg-app); color: white; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
 
-/* --- UPLOAD BOX --- */
+/* =========================================
+   8. MOT HISTORY CARD
+   ========================================= */
+.mot-card {
+  background: var(--surface-highlight);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  transition: all 0.2s ease;
+  overflow: hidden; 
+}
+
+.mot-card-header {
+  padding: 20px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: background 0.2s;
+}
+.mot-card-header:hover { background: rgba(255, 255, 255, 0.03); }
+
+.mot-expand-icon {
+  color: var(--text-muted);
+  transition: transform 0.3s ease;
+  font-size: 1.2rem;
+}
+.mot-expanded .mot-expand-icon { transform: rotate(180deg); }
+
+.mot-details {
+  padding: 0 20px 20px 20px;
+  border-top: 1px solid var(--border);
+  margin-top: -1px;
+  animation: slideDown 0.3s ease-out;
+}
+@keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+.mot-result {
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+  min-width: 80px;
+  text-align: center;
+}
+.result-pass { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.2); }
+.result-fail { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2); }
+
+.mot-meta {
+  display: flex;
+  gap: 20px;
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.mot-meta span { color: white; font-weight: 600; }
+
+.rfr-list { margin-top: 15px; }
+.rfr-item { font-size: 0.9rem; margin-bottom: 8px; color: #cbd5e1; display: flex; gap: 10px; align-items: start; }
+.rfr-type { font-weight: 700; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; margin-top: 2px; height: fit-content; }
+.type-fail { background: #b91c1c; color: white; }
+.type-advisory { background: #ca8a04; color: white; }
+.type-minor { background: #ea580c; color: white; }
+
+/* =========================================
+   9. MISC UI ELEMENTS
+   ========================================= */
 .file-upload-box {
   background: rgba(255,255,255,0.03);
   border: 2px dashed var(--border);
@@ -274,49 +360,10 @@ input[type="date"] {
 .spinner { width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.2); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* --- MOBILE RESPONSIVE --- */
+/* Mobile Responsive */
 @media (max-width: 900px) {
   .dashboard-grid { grid-template-columns: 1fr; }
-  .app-wrapper { padding: 20px; }
   .list-item { flex-direction: column; align-items: flex-start; gap: 12px; }
   .list-item > div:last-child { width: 100%; display: flex; justify-content: space-between; padding-top: 12px; border-top: 1px solid var(--border); }
+  .app-wrapper { padding: 20px; }
 }
-
-/* --- MOT HISTORY STYLES --- */
-.mot-card {
-  background: var(--surface-highlight);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 20px;
-  margin-bottom: 16px;
-  transition: 0.2s;
-}
-.mot-card:hover { border-color: rgba(255,255,255,0.2); }
-
-.mot-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.mot-result {
-  font-weight: 700;
-  padding: 6px 12px;
-  border-radius: 6px;
-  text-transform: uppercase;
-  font-size: 0.85rem;
-  letter-spacing: 0.5px;
-}
-.result-pass { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.2); }
-.result-fail { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2); }
-
-.mot-stat { font-size: 0.9rem; color: var(--text-muted); display: flex; gap: 15px; }
-.mot-stat span { color: white; font-weight: 600; }
-
-.rfr-list { margin-top: 15px; border-top: 1px solid var(--border); padding-top: 15px; }
-.rfr-item { font-size: 0.9rem; margin-bottom: 6px; color: #cbd5e1; display: flex; gap: 8px; }
-.rfr-type { font-weight: 700; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; height: fit-content; margin-top: 2px; }
-.type-fail { background: #b91c1c; color: white; }
-.type-advisory { background: #ca8a04; color: white; }
-.type-minor { background: #ea580c; color: white; }
