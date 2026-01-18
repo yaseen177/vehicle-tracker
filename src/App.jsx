@@ -5,38 +5,27 @@ import { doc, setDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc,
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import "./App.css";
 
-// --- TOAST NOTIFICATION SYSTEM ---
+// --- TOAST NOTIFICATION ---
 const ToastContext = React.createContext();
-
 function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
-
   const addToast = (msg, type = 'success') => {
     const id = Date.now();
     setToasts(prev => [...prev, { id, msg, type }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
   };
-
   return (
     <ToastContext.Provider value={addToast}>
       {children}
       <div className="toast-container">
-        {toasts.map(t => (
-          <div key={t.id} className="toast">
-            {t.type === 'success' ? '✅' : '⚠️'} {t.msg}
-          </div>
-        ))}
+        {toasts.map(t => <div key={t.id} className="toast">{t.type === 'success' ? '✅' : '⚠️'} {t.msg}</div>)}
       </div>
     </ToastContext.Provider>
   );
 }
 
 function App() {
-  return (
-    <ToastProvider>
-      <MainApp />
-    </ToastProvider>
-  );
+  return <ToastProvider><MainApp /></ToastProvider>;
 }
 
 function MainApp() {
@@ -91,20 +80,15 @@ function MainApp() {
       };
 
       await setDoc(doc(db, "users", user.uid, "vehicles", newCar.registration), newCar);
-      showToast("Vehicle successfully added!");
-    } catch (err) {
-      showToast(err.message, "error");
-    }
+      showToast("Vehicle Added");
+    } catch (err) { showToast(err.message, "error"); }
     setLoading(false);
   };
 
   const deleteVehicle = async (vehicleId) => {
     if (window.confirm("Permanently delete this vehicle?")) {
       await deleteDoc(doc(db, "users", user.uid, "vehicles", vehicleId));
-      if (activeVehicleId === vehicleId) {
-        setView("garage");
-        setActiveVehicleId(null);
-      }
+      if (activeVehicleId === vehicleId) { setView("garage"); setActiveVehicleId(null); }
       showToast("Vehicle deleted.");
     }
   };
@@ -115,7 +99,7 @@ function MainApp() {
     <div className="app-wrapper fade-in">
       <header className="top-nav">
         <div className="logo" onClick={() => setView("garage")}>
-           🚗 My Garage {view === 'dashboard' && activeVehicle && <span> / {activeVehicle.registration}</span>}
+           My Garage {view === 'dashboard' && activeVehicle && <span style={{opacity:0.5, fontWeight:400}}> / {activeVehicle.registration}</span>}
         </div>
         <div style={{display:'flex', gap:'12px'}}>
           {view === 'dashboard' && <button onClick={() => setView("garage")} className="btn btn-secondary">Back</button>}
@@ -148,10 +132,10 @@ function MainApp() {
 
 function LoginScreen({ onLogin }) {
   return (
-    <div style={{display:'flex', height:'100vh', alignItems:'center', justifyContent:'center', background:'#f8fafc'}}>
-      <div className="bento-card fade-in" style={{textAlign:'center', maxWidth:'400px'}}>
-        <h1 style={{fontSize:'2rem', marginBottom:'10px'}}>🚗 My Garage</h1>
-        <p style={{marginBottom:'30px'}}>The seamless way to track your vehicle history, documents, and important dates.</p>
+    <div style={{display:'flex', height:'100vh', alignItems:'center', justifyContent:'center'}}>
+      <div className="bento-card fade-in" style={{textAlign:'center', maxWidth:'400px', border:'1px solid var(--border)'}}>
+        <h1 style={{fontSize:'2rem', marginBottom:'10px'}}>My Garage</h1>
+        <p style={{marginBottom:'30px'}}>The premium tracker for your vehicle history.</p>
         <button onClick={onLogin} className="btn btn-primary btn-full">Sign in with Google</button>
       </div>
     </div>
@@ -161,16 +145,16 @@ function LoginScreen({ onLogin }) {
 function GarageView({ vehicles, onOpen, onAdd, loading }) {
   const [input, setInput] = useState("");
   return (
-    <div>
-      <div className="bento-card" style={{marginBottom:'40px', textAlign:'center', padding:'40px 20px'}}>
+    <div className="fade-in">
+      <div className="bento-card" style={{marginBottom:'40px', textAlign:'center', padding:'40px 20px', background:'linear-gradient(180deg, var(--surface) 0%, var(--surface-highlight) 100%)'}}>
         <h2>Add a Vehicle</h2>
-        <p style={{marginBottom:'20px'}}>Enter your registration number to get started.</p>
-        <div style={{maxWidth:'300px', margin:'0 auto', display:'flex', gap:'10px'}}>
+        <p style={{marginBottom:'24px'}}>Enter your UK registration number to track it.</p>
+        <div style={{maxWidth:'320px', margin:'0 auto', display:'flex', gap:'12px'}}>
           <input 
             value={input} 
             onChange={e => setInput(e.target.value.toUpperCase())} 
             placeholder="AA19 AAA" 
-            style={{textAlign:'center', textTransform:'uppercase', fontSize:'1.1rem', letterSpacing:'1px', marginBottom:0}} 
+            style={{textAlign:'center', textTransform:'uppercase', letterSpacing:'1px', marginBottom:0}} 
           />
           <button onClick={() => { onAdd(input); setInput(""); }} disabled={loading} className="btn btn-primary">
             {loading ? <div className="spinner"></div> : "Add"}
@@ -180,13 +164,13 @@ function GarageView({ vehicles, onOpen, onAdd, loading }) {
 
       <div className="garage-grid">
         {vehicles.map(car => (
-          <div key={car.id} onClick={() => onOpen(car.id)} className="bento-card garage-card">
+          <div key={car.id} onClick={() => onOpen(car.id)} className="garage-card">
             <div className="plate-wrapper"><div className="car-plate">{car.registration}</div></div>
             <h2 style={{marginTop:'10px'}}>{car.make}</h2>
             <p>{car.model}</p>
-            <div style={{marginTop:'20px', display:'flex', gap:'8px'}}>
-               <Badge date={car.motExpiry} label="MOT" />
-               <div style={{marginLeft:'auto', color:'var(--accent)', fontSize:'0.9rem', fontWeight:'600'}}>Manage →</div>
+            <div style={{marginTop:'24px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+               <Badge date={car.motExpiry} />
+               <div style={{color:'var(--primary)', fontSize:'0.9rem', fontWeight:'600'}}>Manage →</div>
             </div>
           </div>
         ))}
@@ -241,34 +225,18 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
 
   return (
     <div className="dashboard-grid fade-in">
-      {/* SIDEBAR */}
       <div className="bento-card sidebar-sticky">
          <div className="plate-wrapper"><div className="car-plate">{vehicle.registration}</div></div>
          <h2>{vehicle.make}</h2>
          <p style={{marginBottom:'30px'}}>{vehicle.model}</p>
          
          <div style={{borderTop: '1px solid var(--border)', paddingTop: '10px'}}>
-           {/* MOT (Read Only) */}
            <div className="editable-row" style={{cursor:'default'}}>
-             <div className="row-label">
-               <StatusDot date={vehicle.motExpiry} /> MOT Expiry
-             </div>
+             <div className="row-label"><StatusDot date={vehicle.motExpiry} /> MOT Expiry</div>
              <div className="row-value">{formatDate(vehicle.motExpiry)}</div>
            </div>
-
-           {/* TAX (Editable) */}
-           <EditableDateRow 
-             label="Road Tax" 
-             value={vehicle.taxExpiry} 
-             onChange={(val) => updateDate('taxExpiry', val)} 
-           />
-
-           {/* INSURANCE (Editable) */}
-           <EditableDateRow 
-             label="Insurance" 
-             value={vehicle.insuranceExpiry} 
-             onChange={(val) => updateDate('insuranceExpiry', val)} 
-           />
+           <EditableDateRow label="Road Tax" value={vehicle.taxExpiry} onChange={(val) => updateDate('taxExpiry', val)} />
+           <EditableDateRow label="Insurance" value={vehicle.insuranceExpiry} onChange={(val) => updateDate('insuranceExpiry', val)} />
          </div>
 
          <div style={{marginTop:'30px'}}>
@@ -276,7 +244,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
          </div>
       </div>
 
-      {/* MAIN CONTENT */}
       <div>
         <div className="tabs">
           <button onClick={() => setTab("logs")} className={`tab-btn ${tab==='logs'?'active':''}`}>Service History</button>
@@ -304,17 +271,17 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
               </button>
             </form>
 
-            <div className="list-container">
-              {logs.length === 0 && <EmptyState text="No service history logged yet." />}
+            <div style={{display:'flex', flexDirection:'column', gap:'12px'}}>
+              {logs.length === 0 && <EmptyState text="No logs recorded." />}
               {logs.map(log => (
                 <div key={log.id} className="list-item">
-                  <div style={{minWidth:'100px', fontWeight:'600'}}>{formatDate(log.date)}</div>
-                  <div style={{minWidth:'80px'}}><span className="stat-badge badge-grey">{log.type}</span></div>
-                  <div style={{flex:1, fontWeight:'500'}}>{log.desc}</div>
-                  <div style={{minWidth:'80px', fontWeight:'700'}}>£{log.cost}</div>
+                  <div style={{minWidth:'100px', fontWeight:'600', color:'white'}}>{formatDate(log.date)}</div>
+                  <div style={{minWidth:'80px'}}><span style={{background:'rgba(255,255,255,0.1)', padding:'4px 8px', borderRadius:'4px', fontSize:'0.8rem'}}>{log.type}</span></div>
+                  <div style={{flex:1, color:'var(--text-muted)'}}>{log.desc}</div>
+                  <div style={{minWidth:'80px', fontWeight:'700', color:'white'}}>£{log.cost}</div>
                   <div style={{display:'flex', gap:'10px'}}>
-                    {log.receipt && <a href={log.receipt} target="_blank" className="btn btn-secondary btn-sm">Receipt</a>}
-                    <button onClick={() => deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, "logs", log.id))} className="btn btn-danger btn-sm">×</button>
+                    {log.receipt && <a href={log.receipt} target="_blank" className="btn btn-secondary btn-sm" style={{padding:'6px 10px'}}>View</a>}
+                    <button onClick={() => deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, "logs", log.id))} className="btn btn-danger btn-sm" style={{padding:'6px 10px'}}>×</button>
                   </div>
                 </div>
               ))}
@@ -325,10 +292,10 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
             <form onSubmit={e => handleUpload(e, 'doc')} className="bento-card" style={{marginBottom:'24px'}}>
                <h3>Upload Document</h3>
                <div style={{display:'grid', gap:'12px'}}>
-                 <input name="name" placeholder="Document Name (e.g. V5C Logbook)" required />
+                 <input name="name" placeholder="Name (e.g. V5C)" required />
                  <input type="date" name="expiry" />
                  <div className="file-upload-box">
-                   <span>{uploading ? "Uploading..." : "Select File (PDF/Image)"}</span>
+                   <span>{uploading ? "Uploading..." : "Select PDF / Image"}</span>
                    <input type="file" name="file" required />
                  </div>
                  <button disabled={uploading} className="btn btn-primary btn-full">
@@ -336,16 +303,16 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
                  </button>
                </div>
             </form>
-            <div className="list-container">
-               {docs.length === 0 && <EmptyState text="No documents uploaded." />}
+            <div style={{display:'flex', flexDirection:'column', gap:'12px'}}>
+               {docs.length === 0 && <EmptyState text="No documents." />}
                {docs.map(doc => (
                  <div key={doc.id} className="list-item">
                     <div style={{flex:1}}>
-                      <div style={{fontWeight:'600'}}>{doc.name}</div>
-                      <div style={{fontSize:'0.85rem', color:'#64748b'}}>{doc.expiry ? `Expires: ${formatDate(doc.expiry)}` : 'No Expiry'}</div>
+                      <div style={{fontWeight:'600', color:'white'}}>{doc.name}</div>
+                      <div style={{fontSize:'0.85rem', color:'var(--text-muted)'}}>{doc.expiry ? `Exp: ${formatDate(doc.expiry)}` : 'No Expiry'}</div>
                     </div>
                     <div style={{display:'flex', gap:'10px'}}>
-                      <a href={doc.url} target="_blank" className="btn btn-secondary btn-sm">Download</a>
+                      <a href={doc.url} target="_blank" className="btn btn-secondary btn-sm">Open</a>
                       <button onClick={() => deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, "documents", doc.id))} className="btn btn-danger btn-sm">×</button>
                     </div>
                  </div>
@@ -358,29 +325,17 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   );
 }
 
-// --- HELPERS (Defined Once) ---
-
-const EditableDateRow = ({ label, value, onChange }) => {
-  return (
-    <div className="editable-row">
-      <div className="row-label">
-        <StatusDot date={value} /> {label}
-      </div>
-      <div className="row-value">
-        {value ? formatDate(value) : <span style={{color:'var(--accent)', fontSize:'0.9rem'}}>Set Date +</span>}
-      </div>
-      <input 
-        type="date" 
-        className="hidden-date-input"
-        value={value || ""} 
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </div>
-  );
-};
+// --- HELPERS ---
+const EditableDateRow = ({ label, value, onChange }) => (
+  <div className="editable-row">
+    <div className="row-label"><StatusDot date={value} /> {label}</div>
+    <div className="row-value">{value ? formatDate(value) : <span style={{color:'var(--primary)', fontSize:'0.9rem'}}>Set Date</span>}</div>
+    <input type="date" className="hidden-date-input" value={value || ""} onChange={(e) => onChange(e.target.value)} />
+  </div>
+);
 
 const StatusDot = ({ date }) => {
-  if (!date) return <span className="status-dot" style={{background:'#e2e8f0'}}></span>;
+  if (!date) return <span className="status-dot" style={{background:'var(--border)'}}></span>;
   const d = daysLeft(date);
   const color = d < 0 ? 'dot-red' : d < 30 ? 'dot-orange' : 'dot-green';
   return <span className={`status-dot ${color}`}></span>;
@@ -389,20 +344,15 @@ const StatusDot = ({ date }) => {
 const formatDate = (s) => s ? new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
 const daysLeft = (s) => s ? Math.ceil((new Date(s) - new Date()) / (86400000)) : null;
 
-const Badge = ({ date, label }) => {
+const Badge = ({ date }) => {
   const d = daysLeft(date);
-  if (d === null) return <span className="stat-badge badge-grey">{label ? label : "Set Date"}</span>;
-  const color = d < 0 ? 'badge-red' : d < 30 ? 'badge-orange' : 'badge-green';
-  const text = d < 0 ? 'Expired' : `${d} days`;
-  return <div style={{textAlign:'right'}}>
-    <div className={`stat-badge ${color}`}>{text}</div>
-    <div style={{fontSize:'0.75rem', marginTop:'2px', color:'#64748b'}}>{formatDate(date)}</div>
-  </div>;
+  if (d === null) return null;
+  const color = d < 0 ? 'var(--danger)' : d < 30 ? 'var(--warning)' : 'var(--success)';
+  return <span style={{color: color, fontWeight: 700, fontSize:'0.9rem'}}>{d < 0 ? 'Expired' : `${d} days left`}</span>;
 };
 
 const EmptyState = ({ text }) => (
-  <div style={{textAlign:'center', padding:'40px', color:'#94a3b8', border:'2px dashed #e2e8f0', borderRadius:'12px'}}>
-    <div style={{fontSize:'2rem', marginBottom:'10px'}}>📂</div>
+  <div style={{textAlign:'center', padding:'40px', color:'var(--text-muted)', border:'1px dashed var(--border)', borderRadius:'12px'}}>
     {text}
   </div>
 );
