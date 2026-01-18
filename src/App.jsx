@@ -5,6 +5,7 @@ import { doc, setDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc,
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { PDFDocument } from 'pdf-lib';
 import "./App.css";
 
 // --- TOAST NOTIFICATION ---
@@ -231,92 +232,186 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     setUploading(false);
   };
 
-  // --- SALE BUNDLE GENERATOR ---
-  const generateSaleBundle = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
+  // --- UPDATED: MERGE PDFS & IMAGES ---
+  const generateSaleBundle = async () => {
+    showToast("Generating Bundle... (This may take a moment)", "success");
     
-    // Header
-    doc.setFontSize(22);
-    doc.setTextColor(40, 40, 40);
-    doc.text(`Vehicle History Report`, 14, 20);
-    
-    // Car Details Box
-    doc.setDrawColor(200);
-    doc.setFillColor(245, 247, 250);
-    doc.rect(14, 30, pageWidth - 28, 40, "F");
-    
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.text(vehicle.registration, 20, 42);
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`${vehicle.make} ${vehicle.model} (${vehicle.colour})`, 20, 48);
-    doc.text(`Engine: ${vehicle.engineSize || '-'}cc  |  Fuel: ${vehicle.fuelType || '-'}`, 20, 54);
-    const manYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : 'Unknown';
-    doc.text(`Manufactured: ${manYear}`, 20, 60);
+    try {
+      // 1. Create the "Summary Report" using jsPDF
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      
+      // -- Header --
+      doc.setFontSize(22);
+      doc.setTextColor(40, 40, 40);
+      doc.text(`Vehicle History Report`, 14, 20);
+      
+      // -- Car Details --
+      doc.setDrawColor(200);
+      doc.setFillColor(245, 247, 250);
+      doc.rect(14, 30, pageWidth - 28, 40, "F");
+      
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text(vehicle.registration, 20, 42);
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text(`${vehicle.make} ${vehicle.model} (${vehicle.colour})`, 20, 48);
+      doc.text(`Engine: ${vehicle.engineSize || '-'}cc  |  Fuel: ${vehicle.fuelType || '-'}`, 20, 54);
+      const manYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : 'Unknown';
+      doc.text(`Manufactured: ${manYear}`, 20, 60);
 
-    let currentY = 80;
+      let currentY = 80;
 
-    // 1. Service History
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text("Service & Maintenance", 14, currentY);
-    
-    autoTable(doc, {
-      startY: currentY + 5,
-      head: [['Date', 'Type', 'Description', 'Cost']],
-      body: logs.map(l => [formatDate(l.date), l.type, l.desc, `£${l.cost.toFixed(2)}`]),
-      theme: 'striped',
-      headStyles: { fillColor: [59, 130, 246] }
-    });
-    currentY = doc.lastAutoTable.finalY + 15;
+      // -- Service History Table --
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("Service & Maintenance", 14, currentY);
+      
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Date', 'Type', 'Description', 'Cost']],
+        body: logs.map(l => [formatDate(l.date), l.type, l.desc, `£${l.cost.toFixed(2)}`]),
+        theme: 'striped',
+        headStyles: { fillColor: [59, 130, 246] }
+      });
+      currentY = doc.lastAutoTable.finalY + 15;
 
-    // 2. Attached Documents (The Inventory)
-    doc.text("Document Inventory", 14, currentY);
-    
-    const docRows = docs.map(d => [
-      d.name,
-      d.expiry ? formatDate(d.expiry) : 'N/A',
-      "View Document" // This text becomes a link
-    ]);
+      // -- Document Inventory --
+      doc.text("Document Inventory", 14, currentY);
+      const docRows = docs.map(d => [
+        d.name,
+        d.expiry ? formatDate(d.expiry) : 'N/A',
+        "Attached in Bundle"
+      ]);
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Document Name', 'Expiry Date', 'Status']],
+        body: docRows,
+        theme: 'grid',
+        headStyles: { fillColor: [16, 185, 129] }
+      });
+      currentY = doc.lastAutoTable.finalY + 15;
 
-    autoTable(doc, {
-      startY: currentY + 5,
-      head: [['Document Name', 'Expiry Date', 'Access Link']],
-      body: docRows,
-      theme: 'grid',
-      headStyles: { fillColor: [16, 185, 129] }, // Green for docs
-      didDrawCell: (data) => {
-        // Make the "View Document" cell clickable
-        if (data.section === 'body' && data.column.index === 2) {
-          const url = docs[data.row.index].url;
-          doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url });
+      // -- MOT History --
+      doc.text("Recent MOT History", 14, currentY);
+      const motRows = (vehicle.motTests || []).slice(0, 15).map(m => [
+        formatDate(m.completedDate),
+        m.testResult,
+        m.odometerValue ? `${m.odometerValue} ${m.odometerUnit}` : "-",
+        m.motTestNumber
+      ]);
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Date', 'Result', 'Mileage', 'Test Ref']],
+        body: motRows,
+        theme: 'plain',
+        headStyles: { fillColor: [40, 40, 40] } 
+      });
+
+      // -----------------------------------------------------------
+      // 2. IMAGE EMBEDDING (Still easiest to do inside jsPDF)
+      // -----------------------------------------------------------
+      const allAttachments = [
+        ...docs.map(d => ({ name: d.name, url: d.url, type: 'doc' })),
+        ...logs.filter(l => l.receipt).map(l => ({ name: `Receipt: ${l.desc}`, url: l.receipt, type: 'log' }))
+      ];
+
+      // Separate PDFs from Images
+      const pdfAttachments = [];
+      const imageAttachments = [];
+
+      allAttachments.forEach(item => {
+        const isPdf = item.url.toLowerCase().includes('.pdf');
+        if (isPdf) pdfAttachments.push(item);
+        else if (item.url.match(/\.(jpeg|jpg|png|webp)/i) || item.url.includes('alt=media')) imageAttachments.push(item);
+      });
+
+      // Embed Images into the main report now
+      for (const img of imageAttachments) {
+        try {
+          const imgData = await fetch(img.url).then(res => res.blob()).then(blob => {
+             return new Promise((resolve) => {
+               const reader = new FileReader();
+               reader.onloadend = () => resolve(reader.result);
+               reader.readAsDataURL(blob);
+             });
+          });
+
+          doc.addPage();
+          doc.setFontSize(16);
+          doc.text(`Appendix: ${img.name}`, 14, 20);
+          
+          const imgProps = doc.getImageProperties(imgData);
+          const pdfWidth = pageWidth - 40;
+          const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+          
+          if (pdfHeight > pageHeight - 40) {
+             const scale = (pageHeight - 40) / pdfHeight;
+             doc.addImage(imgData, 'JPEG', 20, 30, pdfWidth * scale, pdfHeight * scale);
+          } else {
+             doc.addImage(imgData, 'JPEG', 20, 30, pdfWidth, pdfHeight);
+          }
+        } catch (e) { console.error("Error embedding image", e); }
+      }
+
+      // -----------------------------------------------------------
+      // 3. PDF MERGING (The Magic Step)
+      // -----------------------------------------------------------
+      
+      // A. Convert our jsPDF report to bytes
+      const reportBytes = doc.output('arraybuffer');
+
+      // B. Create a new "Master" PDF with pdf-lib
+      const mergedPdf = await PDFDocument.create();
+
+      // C. Load the Summary Report we just made
+      const reportPdf = await PDFDocument.load(reportBytes);
+      const reportPages = await mergedPdf.copyPages(reportPdf, reportPdf.getPageIndices());
+      reportPages.forEach((page) => mergedPdf.addPage(page));
+
+      // D. Loop through external PDFs, fetch them, and merge them
+      for (const item of pdfAttachments) {
+        try {
+          // Fetch the external PDF file
+          const externalPdfBytes = await fetch(item.url).then(res => res.arrayBuffer());
+          
+          // Load it
+          const externalPdf = await PDFDocument.load(externalPdfBytes);
+          
+          // Copy all pages
+          const externalPages = await mergedPdf.copyPages(externalPdf, externalPdf.getPageIndices());
+          
+          // Add a "Title Page" for this document before the actual pages (Optional, but looks nice)
+          const titlePage = mergedPdf.addPage();
+          titlePage.drawText(`Appendix: ${item.name}`, { x: 50, y: 700, size: 24 });
+          titlePage.drawText(`(Original Document Attached Next)`, { x: 50, y: 670, size: 12 });
+
+          // Paste the pages
+          externalPages.forEach((page) => mergedPdf.addPage(page));
+
+        } catch (err) {
+          console.error("Could not merge PDF:", item.name, err);
+          showToast(`Failed to merge ${item.name}`, 'error');
         }
       }
-    });
-    currentY = doc.lastAutoTable.finalY + 15;
 
-    // 3. MOT History (Last 15)
-    doc.text("Recent MOT History", 14, currentY);
-    const motRows = (vehicle.motTests || []).slice(0, 15).map(m => [
-      formatDate(m.completedDate),
-      m.testResult,
-      m.odometerValue ? `${m.odometerValue} ${m.odometerUnit}` : "-",
-      m.motTestNumber
-    ]);
+      // 4. Save the Final Bundle
+      const pdfBytes = await mergedPdf.save();
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${vehicle.registration}_SaleBundle.pdf`;
+      link.click();
+      
+      showToast("Sale Bundle Downloaded Successfully!");
 
-    autoTable(doc, {
-      startY: currentY + 5,
-      head: [['Date', 'Result', 'Mileage', 'Test Ref']],
-      body: motRows,
-      theme: 'plain',
-      headStyles: { fillColor: [40, 40, 40] } 
-    });
-    
-    doc.save(`${vehicle.registration}_FullReport.pdf`);
-    showToast("Report Downloaded!");
+    } catch (err) {
+      console.error("Bundle Error", err);
+      showToast("Error generating bundle. Check console.", "error");
+    }
   };
 
   const manufactureYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : (vehicle.manufactureDate ? new Date(vehicle.manufactureDate).getFullYear() : 'Unknown');
