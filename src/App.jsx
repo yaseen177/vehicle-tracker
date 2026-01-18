@@ -225,48 +225,75 @@ function DashboardView({ user, vehicle, onDelete }) {
     }
   };
 
+  // Updated: Adds Try/Catch to show errors
   const handleAddLog = async (e) => {
     e.preventDefault();
     setUploading(true);
-    const form = new FormData(e.target);
-    const file = form.get("file");
     
-    let fileUrl = "";
-    if (file && file.size > 0) {
-      const storageRef = ref(storage, `receipts/${user.uid}/${vehicle.id}/${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      fileUrl = await getDownloadURL(storageRef);
-    }
+    try {
+      const form = new FormData(e.target);
+      const file = form.get("file");
+      let fileUrl = "";
 
-    await addDoc(collection(db, "users", user.uid, "vehicles", vehicle.id, "logs"), {
-      date: form.get("date"),
-      type: form.get("type"),
-      desc: form.get("desc"),
-      cost: parseFloat(form.get("cost") || 0),
-      receipt: fileUrl
-    });
-    e.target.reset();
+      if (file && file.size > 0) {
+        // Create reference
+        const storageRef = ref(storage, `receipts/${user.uid}/${vehicle.id}/${Date.now()}_${file.name}`);
+        // Upload
+        await uploadBytes(storageRef, file);
+        // Get URL
+        fileUrl = await getDownloadURL(storageRef);
+      }
+
+      // Save to Database
+      await addDoc(collection(db, "users", user.uid, "vehicles", vehicle.id, "logs"), {
+        date: form.get("date"),
+        type: form.get("type"),
+        desc: form.get("desc"),
+        cost: parseFloat(form.get("cost") || 0),
+        receipt: fileUrl
+      });
+
+      e.target.reset(); // Clear form
+    } catch (error) {
+      console.error("Upload Error:", error);
+      alert("Error uploading: " + error.message);
+    }
+    
     setUploading(false);
   };
 
+  // Updated: Adds Try/Catch to show errors
   const handleAddDoc = async (e) => {
     e.preventDefault();
     setUploading(true);
-    const form = new FormData(e.target);
-    const file = form.get("file");
-    if (!file || file.size === 0) return alert("Select file");
 
-    const storageRef = ref(storage, `documents/${user.uid}/${vehicle.id}/${Date.now()}_${file.name}`);
-    await uploadBytes(storageRef, file);
-    const fileUrl = await getDownloadURL(storageRef);
+    try {
+      const form = new FormData(e.target);
+      const file = form.get("file");
 
-    await addDoc(collection(db, "users", user.uid, "vehicles", vehicle.id, "documents"), {
-      name: form.get("name"),
-      expiry: form.get("expiry"),
-      url: fileUrl,
-      uploadedAt: new Date().toISOString()
-    });
-    e.target.reset();
+      if (!file || file.size === 0) {
+        alert("Please select a file first.");
+        setUploading(false);
+        return;
+      }
+
+      const storageRef = ref(storage, `documents/${user.uid}/${vehicle.id}/${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const fileUrl = await getDownloadURL(storageRef);
+
+      await addDoc(collection(db, "users", user.uid, "vehicles", vehicle.id, "documents"), {
+        name: form.get("name"),
+        expiry: form.get("expiry"),
+        url: fileUrl,
+        uploadedAt: new Date().toISOString()
+      });
+
+      e.target.reset();
+    } catch (error) {
+      console.error("Upload Error:", error);
+      alert("Error uploading: " + error.message);
+    }
+
     setUploading(false);
   };
 
