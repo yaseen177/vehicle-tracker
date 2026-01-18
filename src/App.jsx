@@ -3,6 +3,8 @@ import { auth, googleProvider, db, storage } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, GoogleAuthProvider } from "firebase/auth";
 import { doc, setDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import "./App.css";
 
 // --- TOAST NOTIFICATION ---
@@ -68,7 +70,7 @@ function MainApp() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      // --- SAVE FULL MOT HISTORY ---
+      // --- SAVE FULL DATA ---
       const newCar = {
         registration: data.registration || reg,
         make: data.make,
@@ -78,10 +80,10 @@ function MainApp() {
         fuelType: data.fuelType,     
         firstUsedDate: data.firstUsedDate, 
         manufactureDate: data.manufactureDate,
-        motTests: data.motTests || [], // <--- This array contains the defects/advisories
+        motTests: data.motTests || [], 
         
         motExpiry: data.motTests ? data.motTests[0].expiryDate : "",
-        taxExpiry: "",
+        taxExpiry: "", // Ready for your future Tax API integration
         insuranceExpiry: "",
         addedAt: new Date().toISOString()
       };
@@ -230,6 +232,82 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     setUploading(false);
   };
 
+  // --- NEW: GENERATE SALE BUNDLE PDF ---
+  const generateSaleBundle = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    // Header
+    doc.setFontSize(22);
+    doc.setTextColor(40, 40, 40);
+    doc.text(`Vehicle History Report`, 14, 20);
+    
+    // Car Details Box
+    doc.setDrawColor(200);
+    doc.setFillColor(245, 247, 250);
+    doc.rect(14, 30, pageWidth - 28, 40, "F");
+    
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text(vehicle.registration, 20, 42);
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${vehicle.make} ${vehicle.model} (${vehicle.colour})`, 20, 48);
+    doc.text(`Engine: ${vehicle.engineSize || '-'}cc  |  Fuel: ${vehicle.fuelType || '-'}`, 20, 54);
+    doc.text(`Manufactured: ${manufactureYear}`, 20, 60);
+
+    let currentY = 80;
+
+    // 1. Service History Table
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("Service & Maintenance History", 14, currentY);
+    
+    const serviceRows = logs.map(l => [
+      formatDate(l.date), 
+      l.type, 
+      l.desc, 
+      `£${l.cost.toFixed(2)}`,
+      l.receipt ? "Receipt Attached" : "-"
+    ]);
+
+    autoTable(doc, {
+      startY: currentY + 5,
+      head: [['Date', 'Type', 'Description', 'Cost', 'Notes']],
+      body: serviceRows,
+      theme: 'striped',
+      headStyles: { fillColor: [59, 130, 246] }
+    });
+
+    currentY = doc.lastAutoTable.finalY + 20;
+
+    // 2. MOT History Table
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("MOT History", 14, currentY);
+
+    // Limit to last 10 MOTs to save space
+    const motRows = (vehicle.motTests || []).slice(0, 15).map(m => [
+      formatDate(m.completedDate),
+      m.testResult,
+      m.odometerValue ? `${m.odometerValue} ${m.odometerUnit}` : "-",
+      m.motTestNumber
+    ]);
+
+    autoTable(doc, {
+      startY: currentY + 5,
+      head: [['Date', 'Result', 'Mileage', 'Test Ref']],
+      body: motRows,
+      theme: 'grid',
+      headStyles: { fillColor: [40, 40, 40] } // Dark Grey for MOT
+    });
+    
+    // Save
+    doc.save(`${vehicle.registration}_SaleBundle.pdf`);
+    showToast("Bundle Generated!");
+  };
+
   const manufactureYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : (vehicle.manufactureDate ? new Date(vehicle.manufactureDate).getFullYear() : 'Unknown');
 
   return (
@@ -240,22 +318,10 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
          <p>{vehicle.model}</p>
          
          <div style={{marginTop:'20px', marginBottom:'20px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
-             <div className="spec-box">
-                <div className="spec-label">Year</div>
-                <div className="spec-val">{manufactureYear}</div>
-             </div>
-             <div className="spec-box">
-                <div className="spec-label">Engine</div>
-                <div className="spec-val">{vehicle.engineSize ? `${vehicle.engineSize}cc` : '-'}</div>
-             </div>
-             <div className="spec-box">
-                <div className="spec-label">Fuel</div>
-                <div className="spec-val">{vehicle.fuelType || '-'}</div>
-             </div>
-             <div className="spec-box">
-                <div className="spec-label">Colour</div>
-                <div className="spec-val">{vehicle.colour}</div>
-             </div>
+             <div className="spec-box"><div className="spec-label">Year</div><div className="spec-val">{manufactureYear}</div></div>
+             <div className="spec-box"><div className="spec-label">Engine</div><div className="spec-val">{vehicle.engineSize ? `${vehicle.engineSize}cc` : '-'}</div></div>
+             <div className="spec-box"><div className="spec-label">Fuel</div><div className="spec-val">{vehicle.fuelType || '-'}</div></div>
+             <div className="spec-box"><div className="spec-label">Colour</div><div className="spec-val">{vehicle.colour}</div></div>
          </div>
          
          <div style={{borderTop: '1px solid var(--border)', paddingTop: '10px'}}>
@@ -267,7 +333,12 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
            <EditableDateRow label="Insurance" value={vehicle.insuranceExpiry} onChange={(val) => updateDate('insuranceExpiry', val)} />
          </div>
 
-         <div style={{marginTop:'30px'}}>
+         {/* SALE BUNDLE BUTTON */}
+         <div style={{marginTop:'30px', display:'flex', flexDirection:'column', gap:'10px'}}>
+            <button onClick={generateSaleBundle} className="btn btn-full" 
+              style={{background: 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)', color:'black', border:'none', boxShadow:'0 4px 12px rgba(251, 191, 36, 0.3)'}}>
+              📄 Generate Sale Bundle
+            </button>
             <button onClick={onDelete} className="btn btn-danger btn-full btn-sm">Delete Vehicle</button>
          </div>
       </div>
@@ -318,7 +389,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
           </>
         )}
 
-        {/* --- MOT HISTORY TAB --- */}
         {tab === 'mot' && (
           <div className="fade-in">
              {!vehicle.motTests || vehicle.motTests.length === 0 ? (
@@ -378,14 +448,13 @@ const MotTestCard = ({ test }) => {
   const mileage = test.odometerValue ? `${test.odometerValue} ${test.odometerUnit || 'mi'}` : "Unknown Mileage";
   const testNo = test.motTestNumber || "No Ref";
   
-  // FIX: Look for 'defects' first, fallback to empty array
+  // LOOK FOR DEFECTS
   const defects = test.defects || [];
   const hasDetails = defects.length > 0;
 
   return (
     <div className={`mot-card ${isOpen ? 'mot-expanded' : ''}`} style={{marginBottom: '16px'}}>
       
-      {/* HEADER */}
       <div 
         className="mot-card-header" 
         onClick={() => setIsOpen(!isOpen)} 
@@ -419,7 +488,6 @@ const MotTestCard = ({ test }) => {
         </div>
       </div>
 
-      {/* DETAILS PANEL */}
       {isOpen && (
         <div className="mot-details" style={{padding:'20px', borderTop:'1px solid rgba(255,255,255,0.1)'}}>
            {defects.length === 0 ? (
@@ -428,7 +496,6 @@ const MotTestCard = ({ test }) => {
              <div className="rfr-list">
                 {defects.map((item, i) => (
                    <div key={i} className="rfr-item" style={{marginBottom:'10px', display:'flex', gap:'10px', alignItems:'flex-start'}}>
-                      {/* TYPE BADGE (FAIL / ADVISORY / MINOR) */}
                       <span className={`rfr-type ${item.type === 'FAIL' || item.type === 'MAJOR' || item.type === 'DANGEROUS' ? 'type-fail' : 'type-advisory'}`}
                             style={{
                               background: (item.type === 'FAIL' || item.type === 'MAJOR' || item.type === 'DANGEROUS') ? '#b91c1c' : '#ca8a04',
@@ -436,7 +503,6 @@ const MotTestCard = ({ test }) => {
                             }}>
                         {item.type}
                       </span>
-                      {/* THE TEXT */}
                       <span style={{color:'#e2e8f0', fontSize:'0.95rem', lineHeight:'1.5'}}>{item.text}</span>
                    </div>
                 ))}

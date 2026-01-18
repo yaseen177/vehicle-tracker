@@ -9,10 +9,10 @@ dependencies:
     specifier: ^10.7.1
     version: 10.14.1
   jspdf:
-    specifier: ^2.5.1
+    specifier: ^2.5.2
     version: 2.5.2
   jspdf-autotable:
-    specifier: ^3.8.1
+    specifier: ^3.8.4
     version: 3.8.4(jspdf@2.5.2)
   react:
     specifier: ^18.2.0
