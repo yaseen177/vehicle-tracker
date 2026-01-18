@@ -281,3 +281,42 @@ input[type="date"] {
   .list-item { flex-direction: column; align-items: flex-start; gap: 12px; }
   .list-item > div:last-child { width: 100%; display: flex; justify-content: space-between; padding-top: 12px; border-top: 1px solid var(--border); }
 }
+
+/* --- MOT HISTORY STYLES --- */
+.mot-card {
+  background: var(--surface-highlight);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  margin-bottom: 16px;
+  transition: 0.2s;
+}
+.mot-card:hover { border-color: rgba(255,255,255,0.2); }
+
+.mot-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.mot-result {
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+}
+.result-pass { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.2); }
+.result-fail { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2); }
+
+.mot-stat { font-size: 0.9rem; color: var(--text-muted); display: flex; gap: 15px; }
+.mot-stat span { color: white; font-weight: 600; }
+
+.rfr-list { margin-top: 15px; border-top: 1px solid var(--border); padding-top: 15px; }
+.rfr-item { font-size: 0.9rem; margin-bottom: 6px; color: #cbd5e1; display: flex; gap: 8px; }
+.rfr-type { font-weight: 700; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; height: fit-content; margin-top: 2px; }
+.type-fail { background: #b91c1c; color: white; }
+.type-advisory { background: #ca8a04; color: white; }
+.type-minor { background: #ea580c; color: white; }

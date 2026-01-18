@@ -68,11 +68,18 @@ function MainApp() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
+      // --- NEW: Save FULL Details ---
       const newCar = {
         registration: data.registration || reg,
         make: data.make,
         model: data.model,
         colour: data.primaryColour,
+        engineSize: data.engineSize, // New
+        fuelType: data.fuelType,     // New
+        firstUsedDate: data.firstUsedDate, // New
+        manufactureDate: data.manufactureDate, // New
+        motTests: data.motTests || [], // NEW: Save the entire history array
+        
         motExpiry: data.motTests ? data.motTests[0].expiryDate : "",
         taxExpiry: "",
         insuranceExpiry: "",
@@ -80,7 +87,7 @@ function MainApp() {
       };
 
       await setDoc(doc(db, "users", user.uid, "vehicles", newCar.registration), newCar);
-      showToast("Vehicle Added");
+      showToast("Vehicle Added Successfully");
     } catch (err) { showToast(err.message, "error"); }
     setLoading(false);
   };
@@ -223,12 +230,34 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     setUploading(false);
   };
 
+  // --- DERIVED SPECS ---
+  const manufactureYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : (vehicle.manufactureDate ? new Date(vehicle.manufactureDate).getFullYear() : 'Unknown');
+
   return (
     <div className="dashboard-grid fade-in">
       <div className="bento-card sidebar-sticky">
          <div className="plate-wrapper"><div className="car-plate">{vehicle.registration}</div></div>
          <h2>{vehicle.make}</h2>
-         <p style={{marginBottom:'30px'}}>{vehicle.model}</p>
+         <p>{vehicle.model}</p>
+         
+         <div style={{marginTop:'20px', marginBottom:'20px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
+             <div className="spec-box">
+                <div className="spec-label">Year</div>
+                <div className="spec-val">{manufactureYear}</div>
+             </div>
+             <div className="spec-box">
+                <div className="spec-label">Engine</div>
+                <div className="spec-val">{vehicle.engineSize ? `${vehicle.engineSize}cc` : '-'}</div>
+             </div>
+             <div className="spec-box">
+                <div className="spec-label">Fuel</div>
+                <div className="spec-val">{vehicle.fuelType || '-'}</div>
+             </div>
+             <div className="spec-box">
+                <div className="spec-label">Colour</div>
+                <div className="spec-val">{vehicle.colour}</div>
+             </div>
+         </div>
          
          <div style={{borderTop: '1px solid var(--border)', paddingTop: '10px'}}>
            <div className="editable-row" style={{cursor:'default'}}>
@@ -247,16 +276,17 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
       <div>
         <div className="tabs">
           <button onClick={() => setTab("logs")} className={`tab-btn ${tab==='logs'?'active':''}`}>Service History</button>
+          <button onClick={() => setTab("mot")} className={`tab-btn ${tab==='mot'?'active':''}`}>MOT History</button>
           <button onClick={() => setTab("docs")} className={`tab-btn ${tab==='docs'?'active':''}`}>Documents</button>
         </div>
 
-        {tab === 'logs' ? (
+        {tab === 'logs' && (
           <>
             <form onSubmit={e => handleUpload(e, 'log')} className="bento-card" style={{marginBottom:'24px'}}>
-              <h3>Add New Entry</h3>
+              <h3>Add New Service Log</h3>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px'}}>
                 <input type="date" name="date" required />
-                <select name="type"><option>Service</option><option>Repair</option><option>MOT</option><option>Part</option></select>
+                <select name="type"><option>Service</option><option>Repair</option><option>Part</option><option>Other</option></select>
               </div>
               <input name="desc" placeholder="Description (e.g. Brake Pads)" required style={{marginBottom:'12px'}} />
               <div style={{display:'grid', gridTemplateColumns:'100px 1fr', gap:'12px'}}>
@@ -287,7 +317,47 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
               ))}
             </div>
           </>
-        ) : (
+        )}
+
+        {/* --- NEW MOT HISTORY TAB --- */}
+        {tab === 'mot' && (
+          <div className="fade-in">
+             {!vehicle.motTests || vehicle.motTests.length === 0 ? (
+               <EmptyState text="No MOT history found for this vehicle." />
+             ) : (
+               vehicle.motTests.map((test, index) => (
+                 <div key={index} className="mot-card">
+                    <div className="mot-header">
+                       <div style={{fontWeight:'600', fontSize:'1.1rem'}}>{formatDate(test.completedDate)}</div>
+                       <div className={`mot-result ${test.testResult === 'PASSED' ? 'result-pass' : 'result-fail'}`}>
+                         {test.testResult}
+                       </div>
+                    </div>
+                    <div className="mot-stat">
+                       <div>Mileage: <span>{test.odometerValue} {test.odometerUnit}</span></div>
+                       <div>Test No: <span>{test.motTestNumber}</span></div>
+                    </div>
+
+                    {/* Show Reasons for Failure / Advisories if any */}
+                    {test.rfrAndComments && test.rfrAndComments.length > 0 && (
+                      <div className="rfr-list">
+                        {test.rfrAndComments.map((item, i) => (
+                           <div key={i} className="rfr-item">
+                              <span className={`rfr-type ${item.type === 'FAIL' ? 'type-fail' : 'type-advisory'}`}>
+                                {item.type === 'FAIL' ? 'FAIL' : 'ADVISORY'}
+                              </span>
+                              <span>{item.text}</span>
+                           </div>
+                        ))}
+                      </div>
+                    )}
+                 </div>
+               ))
+             )}
+          </div>
+        )}
+
+        {tab === 'docs' && (
           <>
             <form onSubmit={e => handleUpload(e, 'doc')} className="bento-card" style={{marginBottom:'24px'}}>
                <h3>Upload Document</h3>
