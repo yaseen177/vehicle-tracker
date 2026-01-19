@@ -154,9 +154,9 @@ function GarageView({ vehicles, onOpen, onAddClick }) {
   );
 }
 
-// --- NEW COMPONENT: ADD VEHICLE WIZARD ---
+// --- UPDATED WIZARD WITH SEARCH ---
 const AddVehicleWizard = ({ user, onClose, onComplete }) => {
-  const [step, setStep] = useState(1); // 1: Input, 2: Fetching/Success, 3: Insurance
+  const [step, setStep] = useState(1);
   const [reg, setReg] = useState("");
   const [vehicleData, setVehicleData] = useState(null);
   const [error, setError] = useState(null);
@@ -164,10 +164,14 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
   // Insurance State
   const [insurer, setInsurer] = useState(null);
   const [insuranceDate, setInsuranceDate] = useState("");
-  const [customInsurer, setCustomInsurer] = useState("");
+  
+  // Search State
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
 
-  // REPLACE WITH YOUR KEY
-  const LOGO_DEV_PK = "pk_XnIP3CQSQoGp70yuA4nesA"; 
+  // YOUR PUBLISHABLE KEY (Safe for frontend)
+  const LOGO_DEV_PK = "pk_X6jL5yCCT5uMaaQW4-34sA"; 
 
   const commonInsurers = [
     { name: "Admiral", domain: "admiral.com" },
@@ -175,15 +179,13 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
     { name: "Direct Line", domain: "directline.com" },
     { name: "Hastings", domain: "hastingsdirect.com" },
     { name: "Churchill", domain: "churchill.com" },
-    { name: "AXA", domain: "axa.co.uk" },
-    { name: "LV", domain: "lv.com" },
-    { name: "Tesco Bank", domain: "tescobank.com" },
-    { name: "Marshmallow", domain: "marshmallow.com" }
+    { name: "AXA", domain: "axa.co.uk" }
   ];
 
+  // --- VEHICLE FETCH (Step 1 -> 2) ---
   const fetchVehicle = async () => {
     if(!reg) return;
-    setStep(2); // Show Loading
+    setStep(2);
     try {
       const res = await fetch("/api/vehicle", {
         method: "POST",
@@ -195,18 +197,44 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
       if (data.error) throw new Error(data.error);
       
       setVehicleData(data);
-      // Stay on Step 2 (Success animation) for 2 seconds, then move to insurance
       setTimeout(() => setStep(3), 2500);
     } catch (err) {
       setError(err.message);
-      setStep(1); // Go back
+      setStep(1);
     }
   };
 
+  // --- INSURER SEARCH (Step 3) ---
+  useEffect(() => {
+    // Debounce search to avoid too many API calls
+    const delaySearch = setTimeout(async () => {
+      if (searchTerm.length < 2) {
+        setSearchResults([]);
+        return;
+      }
+      setIsSearching(true);
+      try {
+        // Call our secure backend wrapper
+        const res = await fetch(`/api/insurer-search?q=${encodeURIComponent(searchTerm)}`);
+        const data = await res.json();
+        // Logo.dev returns array of objects { name, domain, logo_url... }
+        setSearchResults(data || []);
+      } catch (e) {
+        console.error("Search failed", e);
+      }
+      setIsSearching(false);
+    }, 500); // Wait 500ms after typing stops
+
+    return () => clearTimeout(delaySearch);
+  }, [searchTerm]);
+
+  // --- SAVE FINAL DATA ---
   const saveVehicle = async () => {
     if(!vehicleData) return;
     
-    const finalInsurer = customInsurer || (insurer ? insurer.name : "");
+    // Use the selected insurer object, or fall back to just the text typed if no selection made
+    const finalProviderName = insurer ? insurer.name : searchTerm;
+    const finalProviderLogo = insurer ? insurer.domain : ""; // Save domain to render logo later
     
     const newCar = {
       registration: vehicleData.registration || reg,
@@ -221,9 +249,10 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
       motTests: vehicleData.motTests || [], 
       motExpiry: vehicleData.motTests ? vehicleData.motTests[0].expiryDate : "",
       
-      // Saved from Wizard
+      // Insurance Data
       insuranceExpiry: insuranceDate,
-      insuranceProvider: finalInsurer,
+      insuranceProvider: finalProviderName,
+      insuranceDomain: finalProviderLogo, // Save domain to show logo on dashboard later
       
       addedAt: new Date().toISOString()
     };
@@ -237,7 +266,7 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
       <div className="wizard-card">
         <button onClick={onClose} style={{position:'absolute', top:20, right:20, background:'none', border:'none', color:'#666', fontSize:'1.5rem', cursor:'pointer'}}>×</button>
 
-        {/* STEP 1: ENTER REG */}
+        {/* STEP 1 & 2 REMAIN THE SAME... */}
         {step === 1 && (
           <div className="wizard-step">
             <h2 style={{color:'white'}}>Add a Vehicle</h2>
@@ -257,7 +286,6 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
           </div>
         )}
 
-        {/* STEP 2: LOADING / SUCCESS */}
         {step === 2 && (
           <div className="wizard-step">
             {!vehicleData ? (
@@ -270,65 +298,91 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
                 <h2 style={{color:'white', marginBottom:'20px'}}>Success!</h2>
                 <div className="plate-wrapper" style={{transform:'scale(0.8)'}}><div className="car-plate">{vehicleData.registration}</div></div>
                 <p style={{color:'white', fontWeight:'bold', marginTop:'10px'}}>{vehicleData.make} {vehicleData.model}</p>
-                
                 <div style={{marginTop:'30px', textAlign:'left'}}>
-                   <div className="check-row">
-                      <span>Vehicle Specs (DVLA)</span>
-                      <div className="check-icon" style={{animationDelay:'0.5s'}}>✓</div>
-                   </div>
-                   <div className="check-row">
-                      <span>MOT History (DVSA)</span>
-                      <div className="check-icon" style={{animationDelay:'1s'}}>✓</div>
-                   </div>
-                   <div className="check-row">
-                      <span>Tax Status</span>
-                      <div className="check-icon" style={{animationDelay:'1.5s'}}>✓</div>
-                   </div>
+                   <div className="check-row"><span>Vehicle Specs (DVLA)</span><div className="check-icon">✓</div></div>
+                   <div className="check-row"><span>MOT History (DVSA)</span><div className="check-icon">✓</div></div>
+                   <div className="check-row"><span>Tax Status</span><div className="check-icon">✓</div></div>
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {/* STEP 3: INSURANCE */}
+        {/* --- STEP 3: INSURANCE (UPDATED) --- */}
         {step === 3 && (
           <div className="wizard-step">
-             <h2 style={{fontSize:'1.4rem'}}>When is your Insurance due?</h2>
+             <h2 style={{fontSize:'1.4rem', color:'white'}}>When is your Insurance due?</h2>
              
-             {/* Big Date Picker */}
              <div style={{margin:'20px 0'}}>
                 <input 
                   type="date" 
-                  style={{fontSize:'1.2rem', padding:'15px', background:'#232730', border:'1px solid var(--primary)', color:'white', width:'100%', textAlign:'center'}} 
+                  style={{fontSize:'1.2rem', padding:'15px', background:'#232730', border:'1px solid var(--primary)', borderRadius:'12px', color:'white', width:'100%', textAlign:'center'}} 
                   value={insuranceDate}
                   onChange={e => setInsuranceDate(e.target.value)}
                 />
              </div>
 
-             <h3 style={{fontSize:'1.1rem', marginTop:'30px', textAlign:'left'}}>Who are you insured with?</h3>
-             <div className="insurer-grid">
-                {commonInsurers.map(ins => (
-                  <div 
-                    key={ins.name} 
-                    className={`insurer-option ${insurer === ins ? 'selected' : ''}`}
-                    onClick={() => { setInsurer(ins); setCustomInsurer(""); }}
-                  >
-                    <img src={`https://img.logo.dev/${ins.domain}?token=${LOGO_DEV_PK}&size=100&format=png`} alt={ins.name} className="insurer-logo" />
-                  </div>
-                ))}
-             </div>
+             <h3 style={{fontSize:'1.1rem', marginTop:'30px', textAlign:'left', color:'#9ca3af'}}>Who are you insured with?</h3>
+             
+             {/* QUICK SELECT GRID */}
+             {!searchTerm && (
+               <div className="insurer-grid">
+                  {commonInsurers.map(ins => (
+                    <div 
+                      key={ins.name} 
+                      className={`insurer-option ${insurer?.name === ins.name ? 'selected' : ''}`}
+                      onClick={() => { setInsurer(ins); setSearchTerm(""); }}
+                    >
+                      <img 
+                        src={`https://img.logo.dev/${ins.domain}?token=${LOGO_DEV_PK}&size=100&format=png`} 
+                        alt={ins.name} 
+                        style={{maxWidth:'80%', maxHeight:'80%', objectFit:'contain'}} 
+                      />
+                    </div>
+                  ))}
+               </div>
+             )}
 
-             {/* Custom Insurer Input */}
-             <div style={{marginTop:'15px'}}>
+             {/* SEARCH BAR & RESULTS */}
+             <div style={{position:'relative', marginTop:'15px'}}>
                <input 
-                 placeholder="Or type provider name..." 
-                 value={customInsurer}
-                 onChange={e => { setCustomInsurer(e.target.value); setInsurer(null); }}
-                 style={{background:'#232730', border:'1px solid var(--border)'}}
+                 placeholder="Search other providers..." 
+                 value={searchTerm}
+                 onChange={e => { setSearchTerm(e.target.value); setInsurer(null); }}
+                 style={{background:'#1f2937', border:'1px solid var(--border)', width:'100%', padding:'12px', borderRadius:'12px', color:'white'}}
                />
+               
+               {/* Search Results Dropdown */}
+               {searchTerm.length >= 2 && (
+                 <div className="search-results">
+                    {isSearching ? (
+                      <div style={{padding:'10px', textAlign:'center', color:'#666'}}>Searching...</div>
+                    ) : (
+                      searchResults.length === 0 ? (
+                        <div style={{padding:'10px', textAlign:'center', color:'#666'}}>No results found</div>
+                      ) : (
+                        searchResults.map((res, i) => (
+                          <div 
+                            key={i} 
+                            className="search-item"
+                            onClick={() => { 
+                               setInsurer({ name: res.name, domain: res.domain }); 
+                               setSearchTerm(res.name); // Set text to name, but hide dropdown via logic or clear results
+                               setSearchResults([]); // Close dropdown
+                            }}
+                          >
+                             {/* Use Publishable Key for displaying result logos */}
+                             <img src={`https://img.logo.dev/${res.domain}?token=${LOGO_DEV_PK}&size=60&format=png`} alt="logo" onError={(e) => e.target.style.display='none'} />
+                             <span>{res.name}</span>
+                          </div>
+                        ))
+                      )
+                    )}
+                 </div>
+               )}
              </div>
 
-             <button onClick={saveVehicle} className="btn btn-primary btn-full" style={{marginTop:'20px'}}>
+             <button onClick={saveVehicle} className="btn btn-primary btn-full" style={{marginTop:'25px'}}>
                Complete Setup
              </button>
           </div>
