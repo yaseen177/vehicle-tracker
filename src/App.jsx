@@ -194,8 +194,9 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [logs, setLogs] = useState([]);
   const [docs, setDocs] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false); // New state for refresh button
   
-  // Track selected filenames for UI feedback
+  // Track selected filenames
   const [logFile, setLogFile] = useState(null);
   const [docFile, setDocFile] = useState(null);
 
@@ -210,6 +211,50 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   const updateDate = async (field, value) => {
     await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), { [field]: value });
     showToast(`${field === 'taxExpiry' ? 'Tax' : 'Insurance'} updated`);
+  };
+
+  // --- NEW: REFRESH DATA FUNCTION ---
+  const refreshData = async () => {
+    setRefreshing(true);
+    try {
+      // 1. Call your API with the existing registration
+      const res = await fetch("/api/vehicle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registration: vehicle.registration })
+      });
+      
+      if (!res.ok) throw new Error("Failed to contact server");
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      // 2. Prepare the updates (Only update fields that come from the API)
+      const updates = {
+        make: data.make,
+        model: data.model,
+        colour: data.primaryColour,
+        engineSize: data.engineSize,
+        fuelType: data.fuelType,
+        manufactureDate: data.manufactureDate,
+        firstUsedDate: data.firstUsedDate,
+        
+        // Update Tax & MOT
+        taxExpiry: data.taxDueDate || "", 
+        motTests: data.motTests || [],
+        motExpiry: data.motTests ? data.motTests[0].expiryDate : "",
+        
+        lastRefreshed: new Date().toISOString()
+      };
+
+      // 3. Save to Firestore (Merge)
+      await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), updates);
+      showToast("Vehicle data refreshed from DVLA/DVSA!");
+
+    } catch (err) {
+      console.error(err);
+      showToast("Refresh failed: " + err.message, "error");
+    }
+    setRefreshing(false);
   };
 
   const handleUpload = async (e, type) => {
@@ -241,22 +286,17 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     setUploading(false);
   };
 
-  // --- GENERATE SALE BUNDLE ---
   const generateSaleBundle = async () => {
     showToast("Generating Bundle... (This may take a moment)", "success");
-    
     try {
-      // 1. Create Summary Report (jsPDF)
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       
-      // Header
       doc.setFontSize(22);
       doc.setTextColor(40, 40, 40);
       doc.text(`Vehicle History Report`, 14, 20);
       
-      // Car Details Box
       doc.setDrawColor(200);
       doc.setFillColor(245, 247, 250);
       doc.rect(14, 30, pageWidth - 28, 40, "F");
@@ -274,7 +314,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
 
       let currentY = 80;
 
-      // -- Service History --
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
       doc.text("Service & Maintenance", 14, currentY);
@@ -288,7 +327,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
       });
       currentY = doc.lastAutoTable.finalY + 15;
 
-      // -- Document Inventory --
       doc.text("Document Inventory", 14, currentY);
       const docRows = docs.map(d => [
         d.name,
@@ -304,13 +342,9 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
       });
       currentY = doc.lastAutoTable.finalY + 15;
 
-      // -- MOT History (With Defects) --
       doc.text("Recent MOT History", 14, currentY);
-      
-      // Map MOTs to rows, joining defects with newlines
       const motRows = (vehicle.motTests || []).slice(0, 10).map(m => {
         const defects = m.defects || [];
-        // Create a bulleted list string of defects
         const defectText = defects.length > 0 
           ? defects.map(d => `• ${d.text} (${d.type})`).join("\n")
           : "No Advisories";
@@ -319,7 +353,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
           formatDate(m.completedDate),
           m.testResult,
           m.odometerValue ? `${m.odometerValue} ${m.odometerUnit}` : "-",
-          defectText // This will wrap automatically in the cell
+          defectText
         ];
       });
 
@@ -327,19 +361,16 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
         startY: currentY + 5,
         head: [['Date', 'Result', 'Mileage', 'Notes / Defects']],
         body: motRows,
-        theme: 'grid', // 'grid' shows borders which is better for multi-line text
-        headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255] }, // Dark Grey Header, White Text
+        theme: 'grid',
+        headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255] },
         columnStyles: {
-          0: { cellWidth: 25 }, // Date
-          1: { cellWidth: 20, fontStyle: 'bold' }, // Result
-          2: { cellWidth: 25 }, // Mileage
-          3: { cellWidth: 'auto', fontSize: 8 } // Defects (smaller font to fit)
+          0: { cellWidth: 25 },
+          1: { cellWidth: 20, fontStyle: 'bold' },
+          2: { cellWidth: 25 },
+          3: { cellWidth: 'auto', fontSize: 8 }
         }
       });
 
-      // -----------------------------------------------------------
-      // 2. PREPARE ATTACHMENTS
-      // -----------------------------------------------------------
       const allAttachments = [
         ...docs.map(d => ({ type: 'doc', name: d.name, url: d.url, expiry: d.expiry })),
         ...logs.filter(l => l.receipt).map(l => ({ type: 'log', name: `Receipt: ${l.desc}`, url: l.receipt, date: l.date, cost: l.cost, desc: l.desc }))
@@ -354,9 +385,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
         else if (item.url.match(/\.(jpeg|jpg|png|webp)/i) || item.url.includes('alt=media')) imageAttachments.push(item);
       });
 
-      // -----------------------------------------------------------
-      // 3. IMAGE EMBEDDING (jsPDF)
-      // -----------------------------------------------------------
       for (const img of imageAttachments) {
         try {
           const imgData = await fetch(img.url).then(res => res.blob()).then(blob => {
@@ -395,9 +423,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
         } catch (e) { console.error("Error embedding image", e); }
       }
 
-      // -----------------------------------------------------------
-      // 4. PDF MERGING (pdf-lib)
-      // -----------------------------------------------------------
       const reportBytes = doc.output('arraybuffer');
       const mergedPdf = await PDFDocument.create();
       const reportPdf = await PDFDocument.load(reportBytes);
@@ -467,16 +492,23 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
              <div className="row-label"><StatusDot date={vehicle.motExpiry} /> MOT Expiry</div>
              <div className="row-value">{formatDate(vehicle.motExpiry)}</div>
            </div>
-           <EditableDateRow label="Road Tax" value={vehicle.taxExpiry} onChange={(val) => updateDate('taxExpiry', val)} />
+           <EditableDateRow label="Road Tax Expiry" value={vehicle.taxExpiry} onChange={(val) => updateDate('taxExpiry', val)} />
            <EditableDateRow label="Insurance" value={vehicle.insuranceExpiry} onChange={(val) => updateDate('insuranceExpiry', val)} />
          </div>
 
-         {/* SALE BUNDLE BUTTON */}
+         {/* ACTIONS */}
          <div style={{marginTop:'30px', display:'flex', flexDirection:'column', gap:'10px'}}>
+            
+            {/* NEW REFRESH BUTTON */}
+            <button onClick={refreshData} disabled={refreshing} className="btn btn-secondary btn-full">
+               {refreshing ? <div className="spinner" style={{width:16, height:16, borderTopColor:'#000'}}></div> : "🔄 Refresh Vehicle Data"}
+            </button>
+            
             <button onClick={generateSaleBundle} className="btn btn-full" 
               style={{background: 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)', color:'black', border:'none', boxShadow:'0 4px 12px rgba(251, 191, 36, 0.3)'}}>
               📄 Generate Sale Bundle
             </button>
+            
             <button onClick={onDelete} className="btn btn-danger btn-full btn-sm">Delete Vehicle</button>
          </div>
       </div>
