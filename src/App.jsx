@@ -167,7 +167,7 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
   const [customInsurer, setCustomInsurer] = useState("");
 
   // REPLACE WITH YOUR KEY
-  const LOGO_DEV_PK = "pk_X6jL5yCCT5uMaaQW4-34sA"; 
+  const LOGO_DEV_PK = "pk_XnIP3CQSQoGp70yuA4nesA"; 
 
   const commonInsurers = [
     { name: "Admiral", domain: "admiral.com" },
