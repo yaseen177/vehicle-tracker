@@ -464,6 +464,43 @@ input[type="date"] {
   box-shadow: 0 10px 20px rgba(0,0,0,0.3);
 }
 
+/* --- INSURANCE CARD (Expanded View) --- */
+.insurance-details {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  padding: 16px;
+  margin-top: -12px; /* Pull it up to connect with the row */
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  animation: slideDown 0.2s ease-out;
+}
+
+.insurance-logo-large {
+  width: 60px;
+  height: 60px;
+  background: white;
+  border-radius: 8px;
+  padding: 4px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+}
+
+.insurance-info h4 { margin: 0; color: white; font-size: 1rem; }
+.insurance-info p { margin: 4px 0 0 0; color: var(--text-muted); font-size: 0.85rem; }
+
+/* Rotate arrow when expanded */
+.row-expand-icon {
+  transition: transform 0.3s ease;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-left: 8px;
+}
+.row-expanded .row-expand-icon { transform: rotate(180deg); }
+
 /* STRONG SELECTED STATE */
 .insurer-option.selected {
   border-color: #3b82f6; /* Bright Blue */

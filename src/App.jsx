@@ -392,16 +392,20 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
   );
 };
 
+// --- UPDATED DASHBOARD VIEW ---
 function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [tab, setTab] = useState("logs");
   const [logs, setLogs] = useState([]);
   const [docs, setDocs] = useState([]);
   const [uploading, setUploading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false); // New state for refresh button
+  const [refreshing, setRefreshing] = useState(false);
   
-  // Track selected filenames
+  // Track selected filenames for UI feedback
   const [logFile, setLogFile] = useState(null);
   const [docFile, setDocFile] = useState(null);
+
+  // YOUR LOGO.DEV PUBLISHABLE KEY
+  const LOGO_DEV_PK = "pk_X6jL5yCCT5uMaaQW4-34sA"; 
 
   useEffect(() => {
     const unsubLogs = onSnapshot(query(collection(db, "users", user.uid, "vehicles", vehicle.id, "logs"), orderBy("date", "desc")), 
@@ -416,47 +420,29 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     showToast(`${field === 'taxExpiry' ? 'Tax' : 'Insurance'} updated`);
   };
 
-  // --- NEW: REFRESH DATA FUNCTION ---
   const refreshData = async () => {
     setRefreshing(true);
     try {
-      // 1. Call your API with the existing registration
       const res = await fetch("/api/vehicle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ registration: vehicle.registration })
       });
-      
       if (!res.ok) throw new Error("Failed to contact server");
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      // 2. Prepare the updates (Only update fields that come from the API)
       const updates = {
-        make: data.make,
-        model: data.model,
-        colour: data.primaryColour,
-        engineSize: data.engineSize,
-        fuelType: data.fuelType,
-        manufactureDate: data.manufactureDate,
-        firstUsedDate: data.firstUsedDate,
-        
-        // Update Tax & MOT
-        taxExpiry: data.taxDueDate || "", 
-        motTests: data.motTests || [],
+        make: data.make, model: data.model, colour: data.primaryColour,
+        engineSize: data.engineSize, fuelType: data.fuelType,
+        manufactureDate: data.manufactureDate, firstUsedDate: data.firstUsedDate,
+        taxExpiry: data.taxDueDate || "", motTests: data.motTests || [],
         motExpiry: data.motTests ? data.motTests[0].expiryDate : "",
-        
         lastRefreshed: new Date().toISOString()
       };
-
-      // 3. Save to Firestore (Merge)
       await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), updates);
-      showToast("Vehicle data refreshed from DVLA/DVSA!");
-
-    } catch (err) {
-      console.error(err);
-      showToast("Refresh failed: " + err.message, "error");
-    }
+      showToast("Vehicle data refreshed!");
+    } catch (err) { showToast("Refresh failed: " + err.message, "error"); }
     setRefreshing(false);
   };
 
@@ -480,26 +466,27 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
         
       await addDoc(collection(db, "users", user.uid, "vehicles", vehicle.id, type === 'log' ? "logs" : "documents"), data);
       showToast(type === 'log' ? "Log added" : "Document saved");
-      
       e.target.reset();
-      if(type === 'log') setLogFile(null);
-      if(type === 'doc') setDocFile(null);
-
+      if(type === 'log') setLogFile(null); else setDocFile(null);
     } catch (err) { showToast(err.message, "error"); }
     setUploading(false);
   };
 
+  // --- GENERATE SALE BUNDLE (Full Logic) ---
   const generateSaleBundle = async () => {
     showToast("Generating Bundle... (This may take a moment)", "success");
     try {
+      // 1. Create Summary Report (jsPDF)
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       
+      // Header
       doc.setFontSize(22);
       doc.setTextColor(40, 40, 40);
       doc.text(`Vehicle History Report`, 14, 20);
       
+      // Car Details Box
       doc.setDrawColor(200);
       doc.setFillColor(245, 247, 250);
       doc.rect(14, 30, pageWidth - 28, 40, "F");
@@ -517,6 +504,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
 
       let currentY = 80;
 
+      // -- Service History --
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
       doc.text("Service & Maintenance", 14, currentY);
@@ -530,6 +518,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
       });
       currentY = doc.lastAutoTable.finalY + 15;
 
+      // -- Document Inventory --
       doc.text("Document Inventory", 14, currentY);
       const docRows = docs.map(d => [
         d.name,
@@ -545,7 +534,9 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
       });
       currentY = doc.lastAutoTable.finalY + 15;
 
+      // -- MOT History (With Defects) --
       doc.text("Recent MOT History", 14, currentY);
+      
       const motRows = (vehicle.motTests || []).slice(0, 10).map(m => {
         const defects = m.defects || [];
         const defectText = defects.length > 0 
@@ -556,7 +547,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
           formatDate(m.completedDate),
           m.testResult,
           m.odometerValue ? `${m.odometerValue} ${m.odometerUnit}` : "-",
-          defectText
+          defectText 
         ];
       });
 
@@ -565,15 +556,18 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
         head: [['Date', 'Result', 'Mileage', 'Notes / Defects']],
         body: motRows,
         theme: 'grid',
-        headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255] },
+        headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255] }, 
         columnStyles: {
-          0: { cellWidth: 25 },
-          1: { cellWidth: 20, fontStyle: 'bold' },
-          2: { cellWidth: 25 },
-          3: { cellWidth: 'auto', fontSize: 8 }
+          0: { cellWidth: 25 }, 
+          1: { cellWidth: 20, fontStyle: 'bold' }, 
+          2: { cellWidth: 25 }, 
+          3: { cellWidth: 'auto', fontSize: 8 } 
         }
       });
 
+      // -----------------------------------------------------------
+      // 2. PREPARE ATTACHMENTS
+      // -----------------------------------------------------------
       const allAttachments = [
         ...docs.map(d => ({ type: 'doc', name: d.name, url: d.url, expiry: d.expiry })),
         ...logs.filter(l => l.receipt).map(l => ({ type: 'log', name: `Receipt: ${l.desc}`, url: l.receipt, date: l.date, cost: l.cost, desc: l.desc }))
@@ -588,6 +582,9 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
         else if (item.url.match(/\.(jpeg|jpg|png|webp)/i) || item.url.includes('alt=media')) imageAttachments.push(item);
       });
 
+      // -----------------------------------------------------------
+      // 3. IMAGE EMBEDDING (jsPDF)
+      // -----------------------------------------------------------
       for (const img of imageAttachments) {
         try {
           const imgData = await fetch(img.url).then(res => res.blob()).then(blob => {
@@ -626,6 +623,9 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
         } catch (e) { console.error("Error embedding image", e); }
       }
 
+      // -----------------------------------------------------------
+      // 4. PDF MERGING (pdf-lib)
+      // -----------------------------------------------------------
       const reportBytes = doc.output('arraybuffer');
       const mergedPdf = await PDFDocument.create();
       const reportPdf = await PDFDocument.load(reportBytes);
@@ -695,23 +695,22 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
              <div className="row-label"><StatusDot date={vehicle.motExpiry} /> MOT Expiry</div>
              <div className="row-value">{formatDate(vehicle.motExpiry)}</div>
            </div>
-           <EditableDateRow label="Road Tax Expiry" value={vehicle.taxExpiry} onChange={(val) => updateDate('taxExpiry', val)} />
-           <EditableDateRow label="Insurance" value={vehicle.insuranceExpiry} onChange={(val) => updateDate('insuranceExpiry', val)} />
+           
+           <EditableDateRow label="Road Tax" value={vehicle.taxExpiry} onChange={(val) => updateDate('taxExpiry', val)} />
+           
+           {/* --- EXPANDABLE INSURANCE ROW --- */}
+           <ExpandableInsuranceRow 
+             vehicle={vehicle} 
+             logoKey={LOGO_DEV_PK}
+             onChange={(val) => updateDate('insuranceExpiry', val)}
+           />
          </div>
 
-         {/* ACTIONS */}
          <div style={{marginTop:'30px', display:'flex', flexDirection:'column', gap:'10px'}}>
-            
-            {/* NEW REFRESH BUTTON */}
             <button onClick={refreshData} disabled={refreshing} className="btn btn-secondary btn-full">
                {refreshing ? <div className="spinner" style={{width:16, height:16, borderTopColor:'#000'}}></div> : "🔄 Refresh Vehicle Data"}
             </button>
-            
-            <button onClick={generateSaleBundle} className="btn btn-full" 
-              style={{background: 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)', color:'black', border:'none', boxShadow:'0 4px 12px rgba(251, 191, 36, 0.3)'}}>
-              📄 Generate Sale Bundle
-            </button>
-            
+            <button onClick={generateSaleBundle} className="btn btn-full" style={{background: 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)', color:'black', border:'none'}}>📄 Generate Sale Bundle</button>
             <button onClick={onDelete} className="btn btn-danger btn-full btn-sm">Delete Vehicle</button>
          </div>
       </div>
@@ -811,6 +810,47 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     </div>
   );
 }
+
+// --- NEW COMPONENT: EXPANDABLE INSURANCE ROW ---
+const ExpandableInsuranceRow = ({ vehicle, onChange, logoKey }) => {
+  const [expanded, setExpanded] = useState(false);
+  const hasProvider = vehicle.insuranceProvider || vehicle.insuranceDomain;
+
+  return (
+    <>
+      <div className={`editable-row ${expanded ? 'row-expanded' : ''}`}>
+        <div className="row-label" style={{flex:1}}>
+          <StatusDot date={vehicle.insuranceExpiry} /> Insurance
+        </div>
+        <div className="row-value" style={{marginRight:'10px', position:'relative'}}>
+          {vehicle.insuranceExpiry ? formatDate(vehicle.insuranceExpiry) : <span style={{color:'var(--primary)', fontSize:'0.9rem'}}>Set Date</span>}
+          <input type="date" className="hidden-date-input" value={vehicle.insuranceExpiry || ""} onChange={(e) => onChange(e.target.value)} />
+        </div>
+        {hasProvider && (
+           <div onClick={() => setExpanded(!expanded)} style={{cursor:'pointer', padding:'4px', display:'flex', alignItems:'center'}}>
+             <span className="row-expand-icon">▼</span>
+           </div>
+        )}
+      </div>
+
+      {expanded && hasProvider && (
+        <div className="insurance-details">
+           {vehicle.insuranceDomain ? (
+             <img src={`https://img.logo.dev/${vehicle.insuranceDomain}?token=${logoKey}&size=100&format=png`} alt="Insurer Logo" className="insurance-logo-large" />
+           ) : (
+             <div className="insurance-logo-large" style={{display:'flex', alignItems:'center', justifyContent:'center', color:'#000', fontWeight:'bold'}}>
+               {vehicle.insuranceProvider.charAt(0)}
+             </div>
+           )}
+           <div className="insurance-info">
+              <h4>{vehicle.insuranceProvider}</h4>
+              <p>Policy expires {formatDate(vehicle.insuranceExpiry)}</p>
+           </div>
+        </div>
+      )}
+    </>
+  );
+};
 
 // --- UPDATED MOT CARD (Uses 'defects' array) ---
 const MotTestCard = ({ test }) => {
