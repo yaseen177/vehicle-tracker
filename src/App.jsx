@@ -36,8 +36,10 @@ function MainApp() {
   const [view, setView] = useState("garage");
   const [myVehicles, setMyVehicles] = useState([]);
   const [activeVehicleId, setActiveVehicleId] = useState(null);
-  const [loading, setLoading] = useState(false);
   const showToast = React.useContext(ToastContext);
+
+  // Modal State
+  const [showAddWizard, setShowAddWizard] = useState(false);
 
   useEffect(() => onAuthStateChanged(auth, u => {
     setUser(u);
@@ -58,42 +60,6 @@ function MainApp() {
     try { await signInWithPopup(auth, provider); } catch (e) { console.error(e); }
   };
 
-  const addNewVehicle = async (reg) => {
-    if (!reg) return;
-    setLoading(true);
-    try {
-      const res = await fetch("/api/vehicle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ registration: reg })
-      });
-      if (res.status === 404) throw new Error("Vehicle not found.");
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-
-      const newCar = {
-        registration: data.registration || reg,
-        make: data.make,
-        model: data.model,
-        colour: data.primaryColour,
-        engineSize: data.engineSize, 
-        fuelType: data.fuelType,     
-        firstUsedDate: data.firstUsedDate, 
-        manufactureDate: data.manufactureDate,
-        taxExpiry: data.taxDueDate || "",
-        motTests: data.motTests || [], 
-        
-        motExpiry: data.motTests ? data.motTests[0].expiryDate : "",
-        insuranceExpiry: "",
-        addedAt: new Date().toISOString()
-      };
-
-      await setDoc(doc(db, "users", user.uid, "vehicles", newCar.registration), newCar);
-      showToast("Vehicle Added Successfully");
-    } catch (err) { showToast(err.message, "error"); }
-    setLoading(false);
-  };
-
   const deleteVehicle = async (vehicleId) => {
     if (window.confirm("Permanently delete this vehicle?")) {
       await deleteDoc(doc(db, "users", user.uid, "vehicles", vehicleId));
@@ -106,6 +72,15 @@ function MainApp() {
 
   return (
     <div className="app-wrapper fade-in">
+      {/* Wizard Modal */}
+      {showAddWizard && (
+        <AddVehicleWizard 
+          user={user} 
+          onClose={() => setShowAddWizard(false)} 
+          onComplete={() => { setShowAddWizard(false); showToast("Vehicle Added!"); }} 
+        />
+      )}
+
       <header className="top-nav">
         <div className="logo" onClick={() => setView("garage")}>
            My Garage {view === 'dashboard' && activeVehicle && <span style={{opacity:0.5, fontWeight:400}}> / {activeVehicle.registration}</span>}
@@ -120,8 +95,7 @@ function MainApp() {
         <GarageView 
           vehicles={myVehicles} 
           onOpen={(id) => { setActiveVehicleId(id); setView("dashboard"); }} 
-          onAdd={addNewVehicle} 
-          loading={loading}
+          onAddClick={() => setShowAddWizard(true)}
         />
       )}
 
@@ -152,24 +126,15 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-function GarageView({ vehicles, onOpen, onAdd, loading }) {
-  const [input, setInput] = useState("");
+function GarageView({ vehicles, onOpen, onAddClick }) {
   return (
     <div className="fade-in">
       <div className="bento-card" style={{marginBottom:'40px', textAlign:'center', padding:'40px 20px', background:'linear-gradient(180deg, var(--surface) 0%, var(--surface-highlight) 100%)'}}>
-        <h2>Add a Vehicle</h2>
-        <p style={{marginBottom:'24px'}}>Enter your UK registration number to track it.</p>
-        <div style={{maxWidth:'320px', margin:'0 auto', display:'flex', gap:'12px'}}>
-          <input 
-            value={input} 
-            onChange={e => setInput(e.target.value.toUpperCase())} 
-            placeholder="AA19 AAA" 
-            style={{textAlign:'center', textTransform:'uppercase', letterSpacing:'1px', marginBottom:0}} 
-          />
-          <button onClick={() => { onAdd(input); setInput(""); }} disabled={loading} className="btn btn-primary">
-            {loading ? <div className="spinner"></div> : "Add"}
-          </button>
-        </div>
+        <h2>Track a New Vehicle</h2>
+        <p style={{marginBottom:'24px'}}>Add a car to check MOT, Tax, and manage history.</p>
+        <button onClick={onAddClick} className="btn btn-primary" style={{padding:'12px 40px', fontSize:'1.1rem'}}>
+          + Add Vehicle
+        </button>
       </div>
 
       <div className="garage-grid">
@@ -188,6 +153,190 @@ function GarageView({ vehicles, onOpen, onAdd, loading }) {
     </div>
   );
 }
+
+// --- NEW COMPONENT: ADD VEHICLE WIZARD ---
+const AddVehicleWizard = ({ user, onClose, onComplete }) => {
+  const [step, setStep] = useState(1); // 1: Input, 2: Fetching/Success, 3: Insurance
+  const [reg, setReg] = useState("");
+  const [vehicleData, setVehicleData] = useState(null);
+  const [error, setError] = useState(null);
+  
+  // Insurance State
+  const [insurer, setInsurer] = useState(null);
+  const [insuranceDate, setInsuranceDate] = useState("");
+  const [customInsurer, setCustomInsurer] = useState("");
+
+  // REPLACE WITH YOUR KEY
+  const LOGO_DEV_PK = "pk_X6jL5yCCT5uMaaQW4-34sA"; 
+
+  const commonInsurers = [
+    { name: "Admiral", domain: "admiral.com" },
+    { name: "Aviva", domain: "aviva.co.uk" },
+    { name: "Direct Line", domain: "directline.com" },
+    { name: "Hastings", domain: "hastingsdirect.com" },
+    { name: "Churchill", domain: "churchill.com" },
+    { name: "AXA", domain: "axa.co.uk" },
+    { name: "LV", domain: "lv.com" },
+    { name: "Tesco Bank", domain: "tescobank.com" },
+    { name: "Marshmallow", domain: "marshmallow.com" }
+  ];
+
+  const fetchVehicle = async () => {
+    if(!reg) return;
+    setStep(2); // Show Loading
+    try {
+      const res = await fetch("/api/vehicle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registration: reg })
+      });
+      if (res.status === 404) throw new Error("Vehicle not found.");
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      
+      setVehicleData(data);
+      // Stay on Step 2 (Success animation) for 2 seconds, then move to insurance
+      setTimeout(() => setStep(3), 2500);
+    } catch (err) {
+      setError(err.message);
+      setStep(1); // Go back
+    }
+  };
+
+  const saveVehicle = async () => {
+    if(!vehicleData) return;
+    
+    const finalInsurer = customInsurer || (insurer ? insurer.name : "");
+    
+    const newCar = {
+      registration: vehicleData.registration || reg,
+      make: vehicleData.make,
+      model: vehicleData.model,
+      colour: vehicleData.primaryColour,
+      engineSize: vehicleData.engineSize, 
+      fuelType: vehicleData.fuelType,     
+      firstUsedDate: vehicleData.firstUsedDate, 
+      manufactureDate: vehicleData.manufactureDate,
+      taxExpiry: vehicleData.taxDueDate || "",
+      motTests: vehicleData.motTests || [], 
+      motExpiry: vehicleData.motTests ? vehicleData.motTests[0].expiryDate : "",
+      
+      // Saved from Wizard
+      insuranceExpiry: insuranceDate,
+      insuranceProvider: finalInsurer,
+      
+      addedAt: new Date().toISOString()
+    };
+
+    await setDoc(doc(db, "users", user.uid, "vehicles", newCar.registration), newCar);
+    onComplete();
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="wizard-card">
+        <button onClick={onClose} style={{position:'absolute', top:20, right:20, background:'none', border:'none', color:'#666', fontSize:'1.5rem', cursor:'pointer'}}>×</button>
+
+        {/* STEP 1: ENTER REG */}
+        {step === 1 && (
+          <div className="wizard-step">
+            <h2 style={{color:'white'}}>Add a Vehicle</h2>
+            <p style={{marginBottom:'20px'}}>Enter the registration number to begin.</p>
+            <div className="plate-wrapper" style={{marginBottom:'20px'}}>
+              <input 
+                className="car-plate" 
+                style={{width:'100%', textAlign:'center', background:'transparent', border:'none', outline:'none', color:'black', textTransform:'uppercase'}}
+                placeholder="AA19 AAA"
+                value={reg}
+                onChange={e => setReg(e.target.value.toUpperCase())}
+                autoFocus
+              />
+            </div>
+            {error && <p style={{color:'var(--danger)', marginBottom:'15px'}}>{error}</p>}
+            <button onClick={fetchVehicle} className="btn btn-primary btn-full">Find Vehicle</button>
+          </div>
+        )}
+
+        {/* STEP 2: LOADING / SUCCESS */}
+        {step === 2 && (
+          <div className="wizard-step">
+            {!vehicleData ? (
+              <div style={{padding:'40px'}}>
+                <div className="spinner" style={{margin:'0 auto', width:40, height:40, borderWidth:4}}></div>
+                <p style={{marginTop:'20px'}}>Contacting DVLA & DVSA...</p>
+              </div>
+            ) : (
+              <div>
+                <h2 style={{color:'white', marginBottom:'20px'}}>Success!</h2>
+                <div className="plate-wrapper" style={{transform:'scale(0.8)'}}><div className="car-plate">{vehicleData.registration}</div></div>
+                <p style={{color:'white', fontWeight:'bold', marginTop:'10px'}}>{vehicleData.make} {vehicleData.model}</p>
+                
+                <div style={{marginTop:'30px', textAlign:'left'}}>
+                   <div className="check-row">
+                      <span>Vehicle Specs (DVLA)</span>
+                      <div className="check-icon" style={{animationDelay:'0.5s'}}>✓</div>
+                   </div>
+                   <div className="check-row">
+                      <span>MOT History (DVSA)</span>
+                      <div className="check-icon" style={{animationDelay:'1s'}}>✓</div>
+                   </div>
+                   <div className="check-row">
+                      <span>Tax Status</span>
+                      <div className="check-icon" style={{animationDelay:'1.5s'}}>✓</div>
+                   </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* STEP 3: INSURANCE */}
+        {step === 3 && (
+          <div className="wizard-step">
+             <h2 style={{fontSize:'1.4rem'}}>When is your Insurance due?</h2>
+             
+             {/* Big Date Picker */}
+             <div style={{margin:'20px 0'}}>
+                <input 
+                  type="date" 
+                  style={{fontSize:'1.2rem', padding:'15px', background:'#232730', border:'1px solid var(--primary)', color:'white', width:'100%', textAlign:'center'}} 
+                  value={insuranceDate}
+                  onChange={e => setInsuranceDate(e.target.value)}
+                />
+             </div>
+
+             <h3 style={{fontSize:'1.1rem', marginTop:'30px', textAlign:'left'}}>Who are you insured with?</h3>
+             <div className="insurer-grid">
+                {commonInsurers.map(ins => (
+                  <div 
+                    key={ins.name} 
+                    className={`insurer-option ${insurer === ins ? 'selected' : ''}`}
+                    onClick={() => { setInsurer(ins); setCustomInsurer(""); }}
+                  >
+                    <img src={`https://img.logo.dev/${ins.domain}?token=${LOGO_DEV_PK}&size=100&format=png`} alt={ins.name} className="insurer-logo" />
+                  </div>
+                ))}
+             </div>
+
+             {/* Custom Insurer Input */}
+             <div style={{marginTop:'15px'}}>
+               <input 
+                 placeholder="Or type provider name..." 
+                 value={customInsurer}
+                 onChange={e => { setCustomInsurer(e.target.value); setInsurer(null); }}
+                 style={{background:'#232730', border:'1px solid var(--border)'}}
+               />
+             </div>
+
+             <button onClick={saveVehicle} className="btn btn-primary btn-full" style={{marginTop:'20px'}}>
+               Complete Setup
+             </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [tab, setTab] = useState("logs");
