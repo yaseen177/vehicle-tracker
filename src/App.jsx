@@ -80,10 +80,10 @@ function MainApp() {
         fuelType: data.fuelType,     
         firstUsedDate: data.firstUsedDate, 
         manufactureDate: data.manufactureDate,
+        taxExpiry: data.taxDueDate || "",
         motTests: data.motTests || [], 
         
         motExpiry: data.motTests ? data.motTests[0].expiryDate : "",
-        taxExpiry: "",
         insuranceExpiry: "",
         addedAt: new Date().toISOString()
       };
@@ -136,6 +136,7 @@ function MainApp() {
     </div>
   );
 }
+
 
 // --- VIEWS ---
 
