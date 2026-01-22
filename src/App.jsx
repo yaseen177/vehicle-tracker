@@ -10,6 +10,52 @@ import QRCode from 'qrcode'; // NEW
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'; // NEW
 import "./App.css";
 
+// --- HUGE LIST OF UK INSURERS (Static Data) ---
+const UK_INSURERS = [
+  { name: "Admiral", domain: "admiral.com" },
+  { name: "Aviva", domain: "aviva.co.uk" },
+  { name: "Direct Line", domain: "directline.com" },
+  { name: "Hastings Direct", domain: "hastingsdirect.com" },
+  { name: "Churchill", domain: "churchill.com" },
+  { name: "LV= (Liverpool Victoria)", domain: "lv.com" },
+  { name: "AXA", domain: "axa.co.uk" },
+  { name: "Tesco Bank", domain: "tescobank.com" },
+  { name: "Sheila's Wheels", domain: "sheilaswheels.com" },
+  { name: "esure", domain: "esure.com" },
+  { name: "1st Central", domain: "1stcentralinsurance.com" },
+  { name: "Sainsbury's Bank", domain: "sainsburysbank.co.uk" },
+  { name: "More Than", domain: "morethan.com" },
+  { name: "Quote Me Happy", domain: "quotemehappy.com" },
+  { name: "Marshmallow", domain: "marshmallow.com" },
+  { name: "Dial Direct", domain: "dialdirect.co.uk" },
+  { name: "RAC", domain: "rac.co.uk" },
+  { name: "The AA", domain: "theaa.com" },
+  { name: "Swinton", domain: "swinton.co.uk" },
+  { name: "Saga", domain: "saga.co.uk" },
+  { name: "Post Office", domain: "postoffice.co.uk" },
+  { name: "John Lewis", domain: "johnlewis.com" },
+  { name: "Privilege", domain: "privilege.com" },
+  { name: "Bell", domain: "bell.co.uk" },
+  { name: "Elephant", domain: "elephant.co.uk" },
+  { name: "Diamond", domain: "diamond.co.uk" },
+  { name: "Co-op Insurance", domain: "co-opinsurance.co.uk" },
+  { name: "Ageas", domain: "ageas.co.uk" },
+  { name: "Allianz", domain: "allianz.co.uk" },
+  { name: "NFU Mutual", domain: "nfumutual.co.uk" },
+  { name: "Zenith", domain: "zenith-insure.com" },
+  { name: "M&S Bank", domain: "bank.marksandspencer.com" },
+  { name: "Budget", domain: "budgetinsurance.com" },
+  { name: "Flow", domain: "flowinsurance.co.uk" },
+  { name: "By Miles", domain: "bymiles.co.uk" },
+  { name: "Cuvva", domain: "cuvva.com" },
+  { name: "Marmalade", domain: "wearemarmalade.co.uk" },
+  { name: "Go Skippy", domain: "goskippy.com" },
+  { name: "One Call", domain: "onecallinsurance.co.uk" },
+  { name: "Performance Direct", domain: "performancedirect.co.uk" },
+  { name: "Acorn", domain: "acorninsure.co.uk" }
+];
+
+
 // --- TOAST NOTIFICATION ---
 const ToastContext = React.createContext();
 function ToastProvider({ children }) {
@@ -156,7 +202,7 @@ function GarageView({ vehicles, onOpen, onAddClick }) {
   );
 }
 
-// --- UPDATED WIZARD WITH SEARCH ---
+// --- UPDATED WIZARD (With Local UK Search) ---
 const AddVehicleWizard = ({ user, onClose, onComplete }) => {
   const [step, setStep] = useState(1);
   const [reg, setReg] = useState("");
@@ -170,16 +216,15 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
   // Search State
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
-  const [isSearching, setIsSearching] = useState(false);
 
-  // YOUR PUBLISHABLE KEY (Safe for frontend)
   const LOGO_DEV_PK = "pk_XnIP3CQSQoGp70yuA4nesA"; 
 
+  // Top 6 for the Quick Grid
   const commonInsurers = [
     { name: "Admiral", domain: "admiral.com" },
     { name: "Aviva", domain: "aviva.co.uk" },
     { name: "Direct Line", domain: "directline.com" },
-    { name: "Hastings", domain: "hastingsdirect.com" },
+    { name: "Hastings Direct", domain: "hastingsdirect.com" },
     { name: "Churchill", domain: "churchill.com" },
     { name: "AXA", domain: "axa.co.uk" }
   ];
@@ -206,37 +251,32 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
     }
   };
 
-  // --- INSURER SEARCH (Step 3) ---
+  // --- LOCAL SEARCH FILTER (Instant) ---
   useEffect(() => {
-    // Debounce search to avoid too many API calls
-    const delaySearch = setTimeout(async () => {
-      if (searchTerm.length < 2) {
-        setSearchResults([]);
-        return;
-      }
-      setIsSearching(true);
-      try {
-        // Call our secure backend wrapper
-        const res = await fetch(`/api/insurer-search?q=${encodeURIComponent(searchTerm)}`);
-        const data = await res.json();
-        // Logo.dev returns array of objects { name, domain, logo_url... }
-        setSearchResults(data || []);
-      } catch (e) {
-        console.error("Search failed", e);
-      }
-      setIsSearching(false);
-    }, 500); // Wait 500ms after typing stops
-
-    return () => clearTimeout(delaySearch);
+    if (searchTerm.length < 1) {
+      setSearchResults([]);
+      return;
+    }
+    // Filter the huge UK_INSURERS list
+    const matches = UK_INSURERS.filter(ins => 
+      ins.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    setSearchResults(matches);
   }, [searchTerm]);
+
+  const handleSelectInsurer = (selected) => {
+    setInsurer(selected);
+    setSearchTerm(selected.name);
+    setSearchResults([]); // Close dropdown
+  };
 
   // --- SAVE FINAL DATA ---
   const saveVehicle = async () => {
     if(!vehicleData) return;
     
-    // Use the selected insurer object, or fall back to just the text typed if no selection made
+    // If user typed a custom name that isn't in our list, use that
     const finalProviderName = insurer ? insurer.name : searchTerm;
-    const finalProviderLogo = insurer ? insurer.domain : ""; // Save domain to render logo later
+    const finalProviderLogo = insurer ? insurer.domain : ""; 
     
     const newCar = {
       registration: vehicleData.registration || reg,
@@ -254,7 +294,7 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
       // Insurance Data
       insuranceExpiry: insuranceDate,
       insuranceProvider: finalProviderName,
-      insuranceDomain: finalProviderLogo, // Save domain to show logo on dashboard later
+      insuranceDomain: finalProviderLogo,
       
       addedAt: new Date().toISOString()
     };
@@ -268,7 +308,7 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
       <div className="wizard-card">
         <button onClick={onClose} style={{position:'absolute', top:20, right:20, background:'none', border:'none', color:'#666', fontSize:'1.5rem', cursor:'pointer'}}>×</button>
 
-        {/* STEP 1 & 2 REMAIN THE SAME... */}
+        {/* STEP 1: ENTER REG */}
         {step === 1 && (
           <div className="wizard-step">
             <h2 style={{color:'white'}}>Add a Vehicle</h2>
@@ -288,6 +328,7 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
           </div>
         )}
 
+        {/* STEP 2: LOADING / SUCCESS */}
         {step === 2 && (
           <div className="wizard-step">
             {!vehicleData ? (
@@ -310,7 +351,7 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
           </div>
         )}
 
-        {/* --- STEP 3: INSURANCE (UPDATED) --- */}
+        {/* STEP 3: INSURANCE (Updated with Local List) */}
         {step === 3 && (
           <div className="wizard-step">
              <h2 style={{fontSize:'1.4rem', color:'white'}}>When is your Insurance due?</h2>
@@ -326,14 +367,14 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
 
              <h3 style={{fontSize:'1.1rem', marginTop:'30px', textAlign:'left', color:'#9ca3af'}}>Who are you insured with?</h3>
              
-             {/* QUICK SELECT GRID */}
+             {/* QUICK SELECT GRID (Only show if not searching) */}
              {!searchTerm && (
                <div className="insurer-grid">
                   {commonInsurers.map(ins => (
                     <div 
                       key={ins.name} 
                       className={`insurer-option ${insurer?.name === ins.name ? 'selected' : ''}`}
-                      onClick={() => { setInsurer(ins); setSearchTerm(""); }}
+                      onClick={() => handleSelectInsurer(ins)}
                     >
                       <img 
                         src={`https://img.logo.dev/${ins.domain}?token=${LOGO_DEV_PK}&size=100&format=png`} 
@@ -345,41 +386,28 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
                </div>
              )}
 
-             {/* SEARCH BAR & RESULTS */}
+             {/* SEARCH BAR & LOCAL RESULTS */}
              <div style={{position:'relative', marginTop:'15px'}}>
                <input 
-                 placeholder="Search other providers..." 
+                 placeholder="Search other providers (e.g. Sainsbury's)..." 
                  value={searchTerm}
                  onChange={e => { setSearchTerm(e.target.value); setInsurer(null); }}
                  style={{background:'#1f2937', border:'1px solid var(--border)', width:'100%', padding:'12px', borderRadius:'12px', color:'white'}}
                />
                
                {/* Search Results Dropdown */}
-               {searchTerm.length >= 2 && (
+               {searchTerm.length >= 1 && searchResults.length > 0 && (
                  <div className="search-results">
-                    {isSearching ? (
-                      <div style={{padding:'10px', textAlign:'center', color:'#666'}}>Searching...</div>
-                    ) : (
-                      searchResults.length === 0 ? (
-                        <div style={{padding:'10px', textAlign:'center', color:'#666'}}>No results found</div>
-                      ) : (
-                        searchResults.map((res, i) => (
-                          <div 
-                            key={i} 
-                            className="search-item"
-                            onClick={() => { 
-                               setInsurer({ name: res.name, domain: res.domain }); 
-                               setSearchTerm(res.name); // Set text to name, but hide dropdown via logic or clear results
-                               setSearchResults([]); // Close dropdown
-                            }}
-                          >
-                             {/* Use Publishable Key for displaying result logos */}
-                             <img src={`https://img.logo.dev/${res.domain}?token=${LOGO_DEV_PK}&size=60&format=png`} alt="logo" onError={(e) => e.target.style.display='none'} />
-                             <span>{res.name}</span>
-                          </div>
-                        ))
-                      )
-                    )}
+                    {searchResults.map((res, i) => (
+                      <div 
+                        key={i} 
+                        className="search-item"
+                        onClick={() => handleSelectInsurer(res)}
+                      >
+                         <img src={`https://img.logo.dev/${res.domain}?token=${LOGO_DEV_PK}&size=60&format=png`} alt="logo" onError={(e) => e.target.style.display='none'} />
+                         <span>{res.name}</span>
+                      </div>
+                    ))}
                  </div>
                )}
              </div>
@@ -394,50 +422,6 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
   );
 };
 
-// --- HUGE LIST OF UK INSURERS (Static Data) ---
-const UK_INSURERS = [
-  { name: "Admiral", domain: "admiral.com" },
-  { name: "Aviva", domain: "aviva.co.uk" },
-  { name: "Direct Line", domain: "directline.com" },
-  { name: "Hastings Direct", domain: "hastingsdirect.com" },
-  { name: "Churchill", domain: "churchill.com" },
-  { name: "LV= (Liverpool Victoria)", domain: "lv.com" },
-  { name: "AXA", domain: "axa.co.uk" },
-  { name: "Tesco Bank", domain: "tescobank.com" },
-  { name: "Sheila's Wheels", domain: "sheilaswheels.com" },
-  { name: "esure", domain: "esure.com" },
-  { name: "1st Central", domain: "1stcentralinsurance.com" },
-  { name: "Sainsbury's Bank", domain: "sainsburysbank.co.uk" },
-  { name: "More Than", domain: "morethan.com" },
-  { name: "Quote Me Happy", domain: "quotemehappy.com" },
-  { name: "Marshmallow", domain: "marshmallow.com" },
-  { name: "Dial Direct", domain: "dialdirect.co.uk" },
-  { name: "RAC", domain: "rac.co.uk" },
-  { name: "The AA", domain: "theaa.com" },
-  { name: "Swinton", domain: "swinton.co.uk" },
-  { name: "Saga", domain: "saga.co.uk" },
-  { name: "Post Office", domain: "postoffice.co.uk" },
-  { name: "John Lewis", domain: "johnlewis.com" },
-  { name: "Privilege", domain: "privilege.com" },
-  { name: "Bell", domain: "bell.co.uk" },
-  { name: "Elephant", domain: "elephant.co.uk" },
-  { name: "Diamond", domain: "diamond.co.uk" },
-  { name: "Co-op Insurance", domain: "co-opinsurance.co.uk" },
-  { name: "Ageas", domain: "ageas.co.uk" },
-  { name: "Allianz", domain: "allianz.co.uk" },
-  { name: "NFU Mutual", domain: "nfumutual.co.uk" },
-  { name: "Zenith", domain: "zenith-insure.com" },
-  { name: "M&S Bank", domain: "bank.marksandspencer.com" },
-  { name: "Budget", domain: "budgetinsurance.com" },
-  { name: "Flow", domain: "flowinsurance.co.uk" },
-  { name: "By Miles", domain: "bymiles.co.uk" },
-  { name: "Cuvva", domain: "cuvva.com" },
-  { name: "Marmalade", domain: "wearemarmalade.co.uk" },
-  { name: "Go Skippy", domain: "goskippy.com" },
-  { name: "One Call", domain: "onecallinsurance.co.uk" },
-  { name: "Performance Direct", domain: "performancedirect.co.uk" },
-  { name: "Acorn", domain: "acorninsure.co.uk" }
-];
 
 // --- NEW COMPONENT: MILEAGE GRAPH ---
 const MileageAnalysis = ({ motTests }) => {
@@ -511,8 +495,13 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [refreshing, setRefreshing] = useState(false);
   const [logFile, setLogFile] = useState(null);
   const [docFile, setDocFile] = useState(null);
+  
+  // NEW: Share Modal State
+  const [shareUrl, setShareUrl] = useState(null);
+  const [shareQr, setShareQr] = useState(null);
+  const [sharing, setSharing] = useState(false);
 
-  const LOGO_DEV_PK = "pk_X6jL5yCCT5uMaaQW4-34sA"; 
+  const LOGO_DEV_PK = "pk_XnIP3CQSQoGp70yuA4nesA"; 
 
   useEffect(() => {
     const unsubLogs = onSnapshot(query(collection(db, "users", user.uid, "vehicles", vehicle.id, "logs"), orderBy("date", "desc")), 
@@ -561,161 +550,189 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     setRefreshing(false);
   };
 
-  // --- GENERATE SALE BUNDLE (With QR Code) ---
-  const generateSaleBundle = async () => {
-    showToast("Generating Bundle... (This may take a moment)", "success");
+  // --- 1. CORE PDF GENERATOR (Returns BLOB, doesn't save) ---
+  const createPdfBlob = async () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    
+    // Header (No QR Code here anymore)
+    doc.setFontSize(22);
+    doc.setTextColor(40, 40, 40);
+    doc.text(`Vehicle History Report`, 14, 20);
+    
+    // Car Details Box
+    doc.setDrawColor(200);
+    doc.setFillColor(245, 247, 250);
+    doc.rect(14, 30, pageWidth - 28, 40, "F");
+    
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text(vehicle.registration, 20, 42);
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${vehicle.make} ${vehicle.model} (${vehicle.colour})`, 20, 48);
+    doc.text(`Engine: ${vehicle.engineSize || '-'}cc  |  Fuel: ${vehicle.fuelType || '-'}`, 20, 54);
+    const manYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : 'Unknown';
+    doc.text(`Manufactured: ${manYear}`, 20, 60);
+
+    let currentY = 80;
+
+    // Service History
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("Service & Maintenance", 14, currentY);
+    autoTable(doc, {
+      startY: currentY + 5,
+      head: [['Date', 'Type', 'Description', 'Cost']],
+      body: logs.map(l => [formatDate(l.date), l.type, l.desc, `£${l.cost.toFixed(2)}`]),
+      theme: 'striped',
+      headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255] }
+    });
+    currentY = doc.lastAutoTable.finalY + 15;
+
+    // Document Inventory
+    doc.text("Document Inventory", 14, currentY);
+    const docRows = docs.map(d => [d.name, d.expiry ? formatDate(d.expiry) : 'N/A', "Attached in Bundle"]);
+    autoTable(doc, {
+      startY: currentY + 5,
+      head: [['Document Name', 'Expiry Date', 'Status']],
+      body: docRows,
+      theme: 'grid',
+      headStyles: { fillColor: [16, 185, 129], textColor: [255, 255, 255] }
+    });
+    currentY = doc.lastAutoTable.finalY + 15;
+
+    // MOT History
+    doc.text("Recent MOT History", 14, currentY);
+    const motRows = (vehicle.motTests || []).slice(0, 10).map(m => {
+      const defects = m.defects || [];
+      const defectText = defects.length > 0 ? defects.map(d => `• ${d.text} (${d.type})`).join("\n") : "No Advisories";
+      return [formatDate(m.completedDate), m.testResult, m.odometerValue ? `${m.odometerValue} ${m.odometerUnit}` : "-", defectText];
+    });
+    autoTable(doc, {
+      startY: currentY + 5,
+      head: [['Date', 'Result', 'Mileage', 'Notes / Defects']],
+      body: motRows,
+      theme: 'grid',
+      headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255] },
+      columnStyles: { 0: { cellWidth: 25 }, 1: { cellWidth: 20, fontStyle: 'bold' }, 2: { cellWidth: 25 }, 3: { cellWidth: 'auto', fontSize: 8 } }
+    });
+
+    // Prepare Attachments
+    const allAttachments = [
+      ...docs.map(d => ({ type: 'doc', name: d.name, url: d.url, expiry: d.expiry })),
+      ...logs.filter(l => l.receipt).map(l => ({ type: 'log', name: `Receipt: ${l.desc}`, url: l.receipt, date: l.date, cost: l.cost, desc: l.desc }))
+    ];
+    const pdfAttachments = [];
+    const imageAttachments = [];
+
+    allAttachments.forEach(item => {
+      const isPdf = item.url.toLowerCase().includes('.pdf');
+      if (isPdf) pdfAttachments.push(item);
+      else if (item.url.match(/\.(jpeg|jpg|png|webp)/i) || item.url.includes('alt=media')) imageAttachments.push(item);
+    });
+
+    // Embed Images
+    for (const img of imageAttachments) {
+      try {
+        const imgData = await fetch(img.url).then(res => res.blob()).then(blob => {
+           return new Promise((resolve) => {
+             const reader = new FileReader();
+             reader.onloadend = () => resolve(reader.result);
+             reader.readAsDataURL(blob);
+           });
+        });
+        doc.addPage();
+        doc.setFontSize(16); doc.setFont("helvetica", "bold"); doc.text(`Appendix: ${img.name}`, 14, 20);
+        doc.setFontSize(11); doc.setFont("helvetica", "normal");
+        if(img.type === 'log') {
+           doc.text(`Date: ${formatDate(img.date)}`, 14, 28); doc.text(`Description: ${img.desc}`, 14, 34); doc.text(`Amount: £${img.cost.toFixed(2)}`, 14, 40);
+        } else { doc.text(`Expiry Date: ${img.expiry ? formatDate(img.expiry) : 'N/A'}`, 14, 28); }
+
+        const imgProps = doc.getImageProperties(imgData);
+        const pdfWidth = pageWidth - 40;
+        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        if (pdfHeight > pageHeight - 60) {
+           const scale = (pageHeight - 60) / pdfHeight;
+           doc.addImage(imgData, 'JPEG', 20, 50, pdfWidth * scale, pdfHeight * scale);
+        } else { doc.addImage(imgData, 'JPEG', 20, 50, pdfWidth, pdfHeight); }
+      } catch (e) { console.error("Error embedding image", e); }
+    }
+
+    // Merge PDFs
+    const reportBytes = doc.output('arraybuffer');
+    const mergedPdf = await PDFDocument.create();
+    const reportPdf = await PDFDocument.load(reportBytes);
+    const reportPages = await mergedPdf.copyPages(reportPdf, reportPdf.getPageIndices());
+    reportPages.forEach((page) => mergedPdf.addPage(page));
+
+    for (const item of pdfAttachments) {
+      try {
+        const externalPdfBytes = await fetch(item.url).then(res => res.arrayBuffer());
+        const externalPdf = await PDFDocument.load(externalPdfBytes);
+        const externalPages = await mergedPdf.copyPages(externalPdf, externalPdf.getPageIndices());
+        
+        const titlePage = mergedPdf.addPage();
+        const { width, height } = titlePage.getSize();
+        titlePage.drawText(`Appendix: ${item.name}`, { x: 50, y: height - 100, size: 24 });
+        if(item.type === 'log') {
+          titlePage.drawText(`Date: ${formatDate(item.date)}`, { x: 50, y: height - 150, size: 18 });
+          titlePage.drawText(`Description: ${item.desc}`, { x: 50, y: height - 180, size: 18 });
+          titlePage.drawText(`Amount: £${item.cost.toFixed(2)}`, { x: 50, y: height - 210, size: 18 });
+        } else {
+          titlePage.drawText(`Expiry Date: ${item.expiry ? formatDate(item.expiry) : 'N/A'}`, { x: 50, y: height - 150, size: 18 });
+        }
+        titlePage.drawText(`(Original Document Attached Next)`, { x: 50, y: height - 300, size: 12, color: rgb(0.5, 0.5, 0.5) });
+        externalPages.forEach((page) => mergedPdf.addPage(page));
+      } catch (err) { console.error("Could not merge PDF:", item.name, err); }
+    }
+
+    return await mergedPdf.save(); // Returns Uint8Array
+  };
+
+  // --- 2. DOWNLOAD HANDLER ---
+  const handleDownloadReport = async () => {
+     showToast("Generating PDF...", "success");
+     try {
+       const pdfBytes = await createPdfBlob();
+       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+       const link = document.createElement('a');
+       link.href = URL.createObjectURL(blob);
+       link.download = `${vehicle.registration}_SaleBundle.pdf`;
+       link.click();
+       showToast("Download Started");
+     } catch (e) { console.error(e); showToast("Failed to generate PDF", "error"); }
+  };
+
+  // --- 3. SHARE HANDLER (The New Logic) ---
+  const handleShareReport = async () => {
+    setSharing(true);
+    showToast("Creating Public Link...", "success");
     try {
-      const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-      
-      // 1. GENERATE QR CODE
-      // Points to a google search for now, but could be a public link to your app in future
-      const qrUrl = await QRCode.toDataURL(`https://www.google.com/search?q=${vehicle.registration}+history`);
-
-      // Header
-      doc.setFontSize(22);
-      doc.setTextColor(40, 40, 40);
-      doc.text(`Vehicle History Report`, 14, 20);
-      
-      // Car Details Box
-      doc.setDrawColor(200);
-      doc.setFillColor(245, 247, 250);
-      doc.rect(14, 30, pageWidth - 28, 40, "F");
-
-      doc.addImage(qrUrl, 'PNG', pageWidth - 35, 10, 25, 25);
-      
-      doc.setFontSize(16);
-      doc.setFont("helvetica", "bold");
-      doc.text(vehicle.registration, 20, 42);
-      
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.text(`${vehicle.make} ${vehicle.model} (${vehicle.colour})`, 20, 48);
-      doc.text(`Engine: ${vehicle.engineSize || '-'}cc  |  Fuel: ${vehicle.fuelType || '-'}`, 20, 54);
-      const manYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : 'Unknown';
-      doc.text(`Manufactured: ${manYear}`, 20, 60);
-
-      let currentY = 80;
-
-      // Service History
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text("Service & Maintenance", 14, currentY);
-      autoTable(doc, {
-        startY: currentY + 5,
-        head: [['Date', 'Type', 'Description', 'Cost']],
-        body: logs.map(l => [formatDate(l.date), l.type, l.desc, `£${l.cost.toFixed(2)}`]),
-        theme: 'striped',
-        headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255] }
-      });
-      currentY = doc.lastAutoTable.finalY + 15;
-
-      // Document Inventory
-      doc.text("Document Inventory", 14, currentY);
-      const docRows = docs.map(d => [d.name, d.expiry ? formatDate(d.expiry) : 'N/A', "Attached in Bundle"]);
-      autoTable(doc, {
-        startY: currentY + 5,
-        head: [['Document Name', 'Expiry Date', 'Status']],
-        body: docRows,
-        theme: 'grid',
-        headStyles: { fillColor: [16, 185, 129], textColor: [255, 255, 255] }
-      });
-      currentY = doc.lastAutoTable.finalY + 15;
-
-      // MOT History
-      doc.text("Recent MOT History", 14, currentY);
-      const motRows = (vehicle.motTests || []).slice(0, 10).map(m => {
-        const defects = m.defects || [];
-        const defectText = defects.length > 0 ? defects.map(d => `• ${d.text} (${d.type})`).join("\n") : "No Advisories";
-        return [formatDate(m.completedDate), m.testResult, m.odometerValue ? `${m.odometerValue} ${m.odometerUnit}` : "-", defectText];
-      });
-      autoTable(doc, {
-        startY: currentY + 5,
-        head: [['Date', 'Result', 'Mileage', 'Notes / Defects']],
-        body: motRows,
-        theme: 'grid',
-        headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255] },
-        columnStyles: { 0: { cellWidth: 25 }, 1: { cellWidth: 20, fontStyle: 'bold' }, 2: { cellWidth: 25 }, 3: { cellWidth: 'auto', fontSize: 8 } }
-      });
-
-      // Prepare Attachments
-      const allAttachments = [
-        ...docs.map(d => ({ type: 'doc', name: d.name, url: d.url, expiry: d.expiry })),
-        ...logs.filter(l => l.receipt).map(l => ({ type: 'log', name: `Receipt: ${l.desc}`, url: l.receipt, date: l.date, cost: l.cost, desc: l.desc }))
-      ];
-      const pdfAttachments = [];
-      const imageAttachments = [];
-
-      allAttachments.forEach(item => {
-        const isPdf = item.url.toLowerCase().includes('.pdf');
-        if (isPdf) pdfAttachments.push(item);
-        else if (item.url.match(/\.(jpeg|jpg|png|webp)/i) || item.url.includes('alt=media')) imageAttachments.push(item);
-      });
-
-      // Embed Images
-      for (const img of imageAttachments) {
-        try {
-          const imgData = await fetch(img.url).then(res => res.blob()).then(blob => {
-             return new Promise((resolve) => {
-               const reader = new FileReader();
-               reader.onloadend = () => resolve(reader.result);
-               reader.readAsDataURL(blob);
-             });
-          });
-          doc.addPage();
-          doc.setFontSize(16); doc.setFont("helvetica", "bold"); doc.text(`Appendix: ${img.name}`, 14, 20);
-          doc.setFontSize(11); doc.setFont("helvetica", "normal");
-          if(img.type === 'log') {
-             doc.text(`Date: ${formatDate(img.date)}`, 14, 28); doc.text(`Description: ${img.desc}`, 14, 34); doc.text(`Amount: £${img.cost.toFixed(2)}`, 14, 40);
-          } else { doc.text(`Expiry Date: ${img.expiry ? formatDate(img.expiry) : 'N/A'}`, 14, 28); }
-
-          const imgProps = doc.getImageProperties(imgData);
-          const pdfWidth = pageWidth - 40;
-          const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-          if (pdfHeight > pageHeight - 60) {
-             const scale = (pageHeight - 60) / pdfHeight;
-             doc.addImage(imgData, 'JPEG', 20, 50, pdfWidth * scale, pdfHeight * scale);
-          } else { doc.addImage(imgData, 'JPEG', 20, 50, pdfWidth, pdfHeight); }
-        } catch (e) { console.error("Error embedding image", e); }
-      }
-
-      // Merge PDFs
-      const reportBytes = doc.output('arraybuffer');
-      const mergedPdf = await PDFDocument.create();
-      const reportPdf = await PDFDocument.load(reportBytes);
-      const reportPages = await mergedPdf.copyPages(reportPdf, reportPdf.getPageIndices());
-      reportPages.forEach((page) => mergedPdf.addPage(page));
-
-      for (const item of pdfAttachments) {
-        try {
-          const externalPdfBytes = await fetch(item.url).then(res => res.arrayBuffer());
-          const externalPdf = await PDFDocument.load(externalPdfBytes);
-          const externalPages = await mergedPdf.copyPages(externalPdf, externalPdf.getPageIndices());
-          
-          const titlePage = mergedPdf.addPage();
-          const { width, height } = titlePage.getSize();
-          titlePage.drawText(`Appendix: ${item.name}`, { x: 50, y: height - 100, size: 24 });
-          if(item.type === 'log') {
-            titlePage.drawText(`Date: ${formatDate(item.date)}`, { x: 50, y: height - 150, size: 18 });
-            titlePage.drawText(`Description: ${item.desc}`, { x: 50, y: height - 180, size: 18 });
-            titlePage.drawText(`Amount: £${item.cost.toFixed(2)}`, { x: 50, y: height - 210, size: 18 });
-          } else {
-            titlePage.drawText(`Expiry Date: ${item.expiry ? formatDate(item.expiry) : 'N/A'}`, { x: 50, y: height - 150, size: 18 });
-          }
-          titlePage.drawText(`(Original Document Attached Next)`, { x: 50, y: height - 300, size: 12, color: rgb(0.5, 0.5, 0.5) });
-          externalPages.forEach((page) => mergedPdf.addPage(page));
-        } catch (err) { console.error("Could not merge PDF:", item.name, err); showToast(`Failed to merge ${item.name}`, 'error'); }
-      }
-
-      const pdfBytes = await mergedPdf.save();
+      // A. Generate PDF
+      const pdfBytes = await createPdfBlob();
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `${vehicle.registration}_SaleBundle.pdf`;
-      link.click();
-      showToast("Sale Bundle Downloaded Successfully!");
-    } catch (err) { console.error("Bundle Error", err); showToast("Error generating bundle. Check console.", "error"); }
+      
+      // B. Upload to Firebase (Public Folder)
+      // Path: public_reports/{vehicleID}.pdf (Overwrites previous so it's always fresh)
+      const shareRef = ref(storage, `public_reports/${vehicle.id}_Bundle.pdf`);
+      await uploadBytes(shareRef, blob);
+      const url = await getDownloadURL(shareRef);
+      
+      // C. Generate QR Code
+      const qrDataUrl = await QRCode.toDataURL(url);
+      
+      setShareUrl(url);
+      setShareQr(qrDataUrl);
+      setSharing(false);
+      
+    } catch (e) { 
+      console.error(e); 
+      showToast("Share failed: Check Console", "error"); 
+      setSharing(false);
+    }
   };
 
   const handleUpload = async (e, type) => {
@@ -748,6 +765,26 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
 
   return (
     <div className="dashboard-grid fade-in">
+      {/* --- SHARE MODAL --- */}
+      {shareQr && (
+        <div className="modal-overlay" onClick={() => setShareQr(null)}>
+           <div className="wizard-card" onClick={e => e.stopPropagation()} style={{textAlign:'center', maxWidth:'350px'}}>
+              <h2 style={{color:'white'}}>Scan to View</h2>
+              <p style={{marginBottom:'20px'}}>Show this to a buyer. It opens the PDF instantly.</p>
+              
+              <div style={{background:'white', padding:'20px', borderRadius:'12px', display:'inline-block', marginBottom:'20px'}}>
+                 <img src={shareQr} alt="QR Code" style={{width:'200px', height:'200px'}} />
+              </div>
+              
+              <div style={{fontSize:'0.9rem', color:'#999', wordBreak:'break-all'}}>
+                 <a href={shareUrl} target="_blank" style={{color:'var(--primary)'}}>Test Link (Click Here)</a>
+              </div>
+              
+              <button onClick={() => setShareQr(null)} className="btn btn-secondary btn-full" style={{marginTop:'20px'}}>Close</button>
+           </div>
+        </div>
+      )}
+
       <div className="bento-card sidebar-sticky">
          <div className="plate-wrapper"><div className="car-plate">{vehicle.registration}</div></div>
          <h2>{vehicle.make}</h2>
@@ -761,7 +798,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
          </div>
          
          <div style={{borderTop: '1px solid var(--border)', paddingTop: '10px'}}>
-           {/* MOT EDITABLE */}
            <EditableDateRow 
              label="MOT Expiry" 
              value={vehicle.motExpiry} 
@@ -772,7 +808,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
              value={vehicle.taxExpiry} 
              onChange={(val) => updateDate('taxExpiry', val)} 
            />
-           {/* SMART INSURANCE */}
            <ExpandableInsuranceRow 
              vehicle={vehicle} 
              logoKey={LOGO_DEV_PK}
@@ -785,13 +820,21 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
             <button onClick={refreshData} disabled={refreshing} className="btn btn-secondary btn-full">
                {refreshing ? "Refreshing..." : "🔄 Refresh Vehicle Data"}
             </button>
-            <button onClick={generateSaleBundle} className="btn btn-full" style={{background: 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)', color:'black', border:'none'}}>📄 Generate Sale Bundle</button>
+            
+            <div style={{display:'flex', gap:'10px'}}>
+                <button onClick={handleDownloadReport} className="btn btn-full" style={{flex:1, background: 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)', color:'black', border:'none'}}>
+                  📥 Download PDF
+                </button>
+                <button onClick={handleShareReport} disabled={sharing} className="btn btn-secondary" style={{width:'60px', display:'flex', alignItems:'center', justifyContent:'center'}}>
+                   {sharing ? <div className="spinner" style={{width:16,height:16}}></div> : "🔗"}
+                </button>
+            </div>
+
             <button onClick={onDelete} className="btn btn-danger btn-full btn-sm">Delete Vehicle</button>
          </div>
       </div>
 
       <div>
-        {/* NEW MILEAGE GRAPH */}
         <MileageAnalysis motTests={vehicle.motTests} />
 
         <div className="tabs" style={{marginTop:'20px'}}>
