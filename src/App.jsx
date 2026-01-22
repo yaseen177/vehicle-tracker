@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { auth, googleProvider, db, storage } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, GoogleAuthProvider } from "firebase/auth";
 import { doc, setDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, updateDoc } from "firebase/firestore";
@@ -6,6 +6,8 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { PDFDocument, rgb } from 'pdf-lib'; 
+import QRCode from 'qrcode'; // NEW
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'; // NEW
 import "./App.css";
 
 // --- TOAST NOTIFICATION ---
@@ -437,18 +439,80 @@ const UK_INSURERS = [
   { name: "Acorn", domain: "acorninsure.co.uk" }
 ];
 
+// --- NEW COMPONENT: MILEAGE GRAPH ---
+const MileageAnalysis = ({ motTests }) => {
+  // 1. Process Data
+  const data = useMemo(() => {
+    if (!motTests || motTests.length === 0) return [];
+    
+    // Extract valid mileage, sort by date ascending (Oldest first)
+    return motTests
+      .filter(m => m.odometerValue && m.completedDate)
+      .map(m => ({
+        date: new Date(m.completedDate),
+        dateStr: new Date(m.completedDate).toLocaleDateString('en-GB', { month:'short', year:'2-digit' }),
+        miles: parseInt(m.odometerValue),
+      }))
+      .sort((a, b) => a.date - b.date);
+  }, [motTests]);
+
+  if (data.length < 2) return null; // Need at least 2 points for a line
+
+  // 2. Calculate Average Annual Mileage
+  const first = data[0];
+  const last = data[data.length - 1];
+  const yearsDiff = (last.date - first.date) / (1000 * 60 * 60 * 24 * 365);
+  const avgMiles = yearsDiff > 0 ? Math.round((last.miles - first.miles) / yearsDiff) : 0;
+
+  return (
+    <div className="bento-card" style={{ marginTop: '20px', padding: '24px' }}>
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px'}}>
+         <h3 style={{margin:0}}>Mileage History</h3>
+         <div style={{textAlign:'right'}}>
+            <div style={{fontSize:'0.8rem', color:'#9ca3af'}}>Est. Annual Usage</div>
+            <div style={{fontSize:'1.1rem', fontWeight:'bold', color:'var(--primary)'}}>
+               {avgMiles.toLocaleString()} miles/yr
+            </div>
+         </div>
+      </div>
+      
+      <div style={{ width: '100%', height: 250 }}>
+        <ResponsiveContainer>
+          <LineChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+            <XAxis dataKey="dateStr" stroke="#666" tick={{fontSize: 12}} />
+            <YAxis stroke="#666" tick={{fontSize: 12}} tickFormatter={(val) => `${(val/1000).toFixed(0)}k`} />
+            <Tooltip 
+              contentStyle={{ backgroundColor: '#181b21', border: '1px solid #333', borderRadius:'8px' }}
+              labelStyle={{ color: '#fff' }}
+              formatter={(val) => [`${val.toLocaleString()} mi`, "Mileage"]}
+            />
+            <Line 
+              type="monotone" 
+              dataKey="miles" 
+              stroke="#fbbf24" 
+              strokeWidth={3} 
+              dot={{ r: 4, fill: '#fbbf24' }} 
+              activeDot={{ r: 6 }} 
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
+
+
 function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [tab, setTab] = useState("logs");
   const [logs, setLogs] = useState([]);
   const [docs, setDocs] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  
-  // Track selected filenames for UI feedback
   const [logFile, setLogFile] = useState(null);
   const [docFile, setDocFile] = useState(null);
 
-  const LOGO_DEV_PK = "pk_XnIP3CQSQoGp70yuA4nesA"; 
+  const LOGO_DEV_PK = "pk_X6jL5yCCT5uMaaQW4-34sA"; 
 
   useEffect(() => {
     const unsubLogs = onSnapshot(query(collection(db, "users", user.uid, "vehicles", vehicle.id, "logs"), orderBy("date", "desc")), 
@@ -471,7 +535,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     showToast("Insurance Provider Updated");
   };
 
-  // --- REFRESH DATA FUNCTION ---
   const refreshData = async () => {
     setRefreshing(true);
     try {
@@ -498,7 +561,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     setRefreshing(false);
   };
 
-  // --- GENERATE SALE BUNDLE FUNCTION ---
+  // --- GENERATE SALE BUNDLE (With QR Code) ---
   const generateSaleBundle = async () => {
     showToast("Generating Bundle... (This may take a moment)", "success");
     try {
@@ -506,10 +569,19 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       
+      // 1. GENERATE QR CODE
+      // Points to a google search for now, but could be a public link to your app in future
+      const qrUrl = await QRCode.toDataURL(`https://www.google.com/search?q=${vehicle.registration}+history`);
+
+      // Header
       doc.setFontSize(22);
       doc.setTextColor(40, 40, 40);
       doc.text(`Vehicle History Report`, 14, 20);
+
+      // ADD QR CODE to Top Right
+      doc.addImage(qrUrl, 'PNG', pageWidth - 35, 10, 25, 25);
       
+      // Car Details Box
       doc.setDrawColor(200);
       doc.setFillColor(245, 247, 250);
       doc.rect(14, 30, pageWidth - 28, 40, "F");
@@ -690,7 +762,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
          </div>
          
          <div style={{borderTop: '1px solid var(--border)', paddingTop: '10px'}}>
-           {/* MOT NOW EDITABLE */}
+           {/* MOT EDITABLE */}
            <EditableDateRow 
              label="MOT Expiry" 
              value={vehicle.motExpiry} 
@@ -701,7 +773,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
              value={vehicle.taxExpiry} 
              onChange={(val) => updateDate('taxExpiry', val)} 
            />
-           {/* SMART INSURANCE ROW */}
+           {/* SMART INSURANCE */}
            <ExpandableInsuranceRow 
              vehicle={vehicle} 
              logoKey={LOGO_DEV_PK}
@@ -720,7 +792,10 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
       </div>
 
       <div>
-        <div className="tabs">
+        {/* NEW MILEAGE GRAPH */}
+        <MileageAnalysis motTests={vehicle.motTests} />
+
+        <div className="tabs" style={{marginTop:'20px'}}>
           <button onClick={() => setTab("logs")} className={`tab-btn ${tab==='logs'?'active':''}`}>Service History</button>
           <button onClick={() => setTab("mot")} className={`tab-btn ${tab==='mot'?'active':''}`}>MOT History</button>
           <button onClick={() => setTab("docs")} className={`tab-btn ${tab==='docs'?'active':''}`}>Documents</button>
