@@ -6,9 +6,9 @@ export async function onRequestGet({ request, env }) {
 
   const SECRET_KEY = env.LOGO_DEV_SK;
 
-  // TRICK: Append keywords to force relevant results
-  // If user types "Admiral", we search "Admiral car insurance uk"
-  const enhancedQuery = `${query} car insurance uk`;
+  // TRICK: Append "uk" to prioritize UK companies
+  // If user searches "AXA", we actually search "AXA insurance uk"
+  const enhancedQuery = `${query} insurance uk`;
 
   try {
     const response = await fetch(`https://api.logo.dev/search?q=${encodeURIComponent(enhancedQuery)}`, {
