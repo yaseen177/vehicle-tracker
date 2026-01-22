@@ -399,8 +399,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [docs, setDocs] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  
-  // Track selected filenames for UI feedback
   const [logFile, setLogFile] = useState(null);
   const [docFile, setDocFile] = useState(null);
 
@@ -418,6 +416,14 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   const updateDate = async (field, value) => {
     await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), { [field]: value });
     showToast(`${field === 'taxExpiry' ? 'Tax' : 'Insurance'} updated`);
+  };
+
+  const updateProvider = async (name, domain) => {
+    await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), { 
+      insuranceProvider: name,
+      insuranceDomain: domain
+    });
+    showToast("Insurance Provider Updated");
   };
 
   const refreshData = async () => {
@@ -811,9 +817,26 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   );
 }
 
-// --- NEW COMPONENT: EXPANDABLE INSURANCE ROW ---
-const ExpandableInsuranceRow = ({ vehicle, onChange, logoKey }) => {
+// --- UPDATED INSURANCE COMPONENT (With Edit Mode) ---
+const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoKey }) => {
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+
+  // Search logic (Same as Wizard)
+  useEffect(() => {
+    const delaySearch = setTimeout(async () => {
+      if (searchTerm.length < 2) { setSearchResults([]); return; }
+      try {
+        const res = await fetch(`/api/insurer-search?q=${encodeURIComponent(searchTerm)}`);
+        const data = await res.json();
+        setSearchResults(data || []);
+      } catch (e) { console.error(e); }
+    }, 500);
+    return () => clearTimeout(delaySearch);
+  }, [searchTerm]);
+
   const hasProvider = vehicle.insuranceProvider || vehicle.insuranceDomain;
 
   return (
@@ -822,30 +845,86 @@ const ExpandableInsuranceRow = ({ vehicle, onChange, logoKey }) => {
         <div className="row-label" style={{flex:1}}>
           <StatusDot date={vehicle.insuranceExpiry} /> Insurance
         </div>
-        <div className="row-value" style={{marginRight:'10px', position:'relative'}}>
-          {vehicle.insuranceExpiry ? formatDate(vehicle.insuranceExpiry) : <span style={{color:'var(--primary)', fontSize:'0.9rem'}}>Set Date</span>}
-          <input type="date" className="hidden-date-input" value={vehicle.insuranceExpiry || ""} onChange={(e) => onChange(e.target.value)} />
+        
+        <div className="insurance-row-container">
+            {/* Date Picker */}
+            <div className="row-value" style={{position:'relative', flex:1, textAlign:'right'}}>
+              {vehicle.insuranceExpiry ? formatDate(vehicle.insuranceExpiry) : <span style={{color:'var(--primary)', fontSize:'0.9rem'}}>Set Date</span>}
+              <input 
+                 type="date" 
+                 className="hidden-date-input" 
+                 value={vehicle.insuranceExpiry || ""} 
+                 onChange={(e) => onDateChange(e.target.value)} 
+              />
+            </div>
+
+            {/* SPACED OUT EXPAND BUTTON */}
+            {hasProvider && (
+              <div 
+                className="row-action-area" 
+                onClick={() => setExpanded(!expanded)}
+                style={{cursor:'pointer'}}
+              >
+                <span className="row-expand-icon">▼</span>
+              </div>
+            )}
         </div>
-        {hasProvider && (
-           <div onClick={() => setExpanded(!expanded)} style={{cursor:'pointer', padding:'4px', display:'flex', alignItems:'center'}}>
-             <span className="row-expand-icon">▼</span>
-           </div>
-        )}
       </div>
 
+      {/* Expanded Card */}
       {expanded && hasProvider && (
-        <div className="insurance-details">
-           {vehicle.insuranceDomain ? (
-             <img src={`https://img.logo.dev/${vehicle.insuranceDomain}?token=${logoKey}&size=100&format=png`} alt="Insurer Logo" className="insurance-logo-large" />
+        <div className="insurance-details" style={{flexDirection:'column', alignItems:'stretch'}}>
+           
+           {!editing ? (
+             <div style={{display:'flex', alignItems:'center', gap:'16px'}}>
+                {vehicle.insuranceDomain ? (
+                  <img src={`https://img.logo.dev/${vehicle.insuranceDomain}?token=${logoKey}&size=100&format=png`} alt="Logo" className="insurance-logo-large" />
+                ) : (
+                  <div className="insurance-logo-large" style={{display:'flex', alignItems:'center', justifyContent:'center', color:'#000', fontWeight:'bold'}}>{vehicle.insuranceProvider.charAt(0)}</div>
+                )}
+                
+                <div style={{flex:1}}>
+                   <h4 style={{color:'white'}}>{vehicle.insuranceProvider}</h4>
+                   <p style={{color:'#9ca3af', fontSize:'0.85rem'}}>Policy expires {formatDate(vehicle.insuranceExpiry)}</p>
+                </div>
+
+                {/* EDIT BUTTON */}
+                <button onClick={() => setEditing(true)} style={{background:'none', border:'none', color:'var(--primary)', cursor:'pointer', fontSize:'0.85rem'}}>
+                  Edit
+                </button>
+             </div>
            ) : (
-             <div className="insurance-logo-large" style={{display:'flex', alignItems:'center', justifyContent:'center', color:'#000', fontWeight:'bold'}}>
-               {vehicle.insuranceProvider.charAt(0)}
+             /* EDIT MODE SEARCH BOX */
+             <div className="insurance-edit-box">
+                <div style={{display:'flex', justifyContent:'space-between', marginBottom:'10px'}}>
+                   <span style={{fontSize:'0.9rem', fontWeight:'bold'}}>Find New Provider</span>
+                   <button onClick={() => setEditing(false)} style={{background:'none', border:'none', color:'#666'}}>Cancel</button>
+                </div>
+                
+                <input 
+                  placeholder="Type provider name..." 
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  style={{width:'100%', padding:'10px', borderRadius:'6px', border:'1px solid var(--border)', background:'#0f1115', color:'white'}}
+                  autoFocus
+                />
+
+                {searchResults.length > 0 && (
+                  <div className="search-results" style={{position:'static', marginTop:'10px', maxHeight:'150px'}}>
+                     {searchResults.map((res, i) => (
+                       <div key={i} className="search-item" onClick={() => {
+                          onProviderChange(res.name, res.domain);
+                          setEditing(false);
+                          setSearchTerm("");
+                       }}>
+                          <img src={`https://img.logo.dev/${res.domain}?token=${logoKey}&size=60&format=png`} alt="logo" onError={(e) => e.target.style.display='none'} />
+                          <span>{res.name}</span>
+                       </div>
+                     ))}
+                  </div>
+                )}
              </div>
            )}
-           <div className="insurance-info">
-              <h4>{vehicle.insuranceProvider}</h4>
-              <p>Policy expires {formatDate(vehicle.insuranceExpiry)}</p>
-           </div>
         </div>
       )}
     </>

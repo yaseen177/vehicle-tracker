@@ -538,3 +538,30 @@ input[type="date"] {
 .search-item:hover { background: rgba(255,255,255,0.1); }
 .search-item img { width: 24px; height: 24px; border-radius: 4px; }
 .search-item span { color: white; font-size: 0.9rem; }
+
+/* --- INSURANCE ROW FIXES --- */
+.insurance-row-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+/* Fix iPhone "Too Close" Issue */
+.row-action-area {
+  display: flex;
+  align-items: center;
+  gap: 20px; /* Big gap between Date and Arrow */
+  padding-left: 15px;
+  border-left: 1px solid rgba(255,255,255,0.1); /* Visual separator */
+  margin-left: 10px;
+  height: 100%;
+}
+
+.insurance-edit-box {
+  background: var(--surface);
+  padding: 15px;
+  border-radius: 8px;
+  margin-top: 10px;
+  border: 1px solid var(--primary);
+}
