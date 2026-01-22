@@ -392,7 +392,51 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
   );
 };
 
-// --- UPDATED DASHBOARD VIEW ---
+// --- HUGE LIST OF UK INSURERS (Static Data) ---
+const UK_INSURERS = [
+  { name: "Admiral", domain: "admiral.com" },
+  { name: "Aviva", domain: "aviva.co.uk" },
+  { name: "Direct Line", domain: "directline.com" },
+  { name: "Hastings Direct", domain: "hastingsdirect.com" },
+  { name: "Churchill", domain: "churchill.com" },
+  { name: "LV= (Liverpool Victoria)", domain: "lv.com" },
+  { name: "AXA", domain: "axa.co.uk" },
+  { name: "Tesco Bank", domain: "tescobank.com" },
+  { name: "Sheila's Wheels", domain: "sheilaswheels.com" },
+  { name: "esure", domain: "esure.com" },
+  { name: "1st Central", domain: "1stcentralinsurance.com" },
+  { name: "Sainsbury's Bank", domain: "sainsburysbank.co.uk" },
+  { name: "More Than", domain: "morethan.com" },
+  { name: "Quote Me Happy", domain: "quotemehappy.com" },
+  { name: "Marshmallow", domain: "marshmallow.com" },
+  { name: "Dial Direct", domain: "dialdirect.co.uk" },
+  { name: "RAC", domain: "rac.co.uk" },
+  { name: "The AA", domain: "theaa.com" },
+  { name: "Swinton", domain: "swinton.co.uk" },
+  { name: "Saga", domain: "saga.co.uk" },
+  { name: "Post Office", domain: "postoffice.co.uk" },
+  { name: "John Lewis", domain: "johnlewis.com" },
+  { name: "Privilege", domain: "privilege.com" },
+  { name: "Bell", domain: "bell.co.uk" },
+  { name: "Elephant", domain: "elephant.co.uk" },
+  { name: "Diamond", domain: "diamond.co.uk" },
+  { name: "Co-op Insurance", domain: "co-opinsurance.co.uk" },
+  { name: "Ageas", domain: "ageas.co.uk" },
+  { name: "Allianz", domain: "allianz.co.uk" },
+  { name: "NFU Mutual", domain: "nfumutual.co.uk" },
+  { name: "Zenith", domain: "zenith-insure.com" },
+  { name: "M&S Bank", domain: "bank.marksandspencer.com" },
+  { name: "Budget", domain: "budgetinsurance.com" },
+  { name: "Flow", domain: "flowinsurance.co.uk" },
+  { name: "By Miles", domain: "bymiles.co.uk" },
+  { name: "Cuvva", domain: "cuvva.com" },
+  { name: "Marmalade", domain: "wearemarmalade.co.uk" },
+  { name: "Go Skippy", domain: "goskippy.com" },
+  { name: "One Call", domain: "onecallinsurance.co.uk" },
+  { name: "Performance Direct", domain: "performancedirect.co.uk" },
+  { name: "Acorn", domain: "acorninsure.co.uk" }
+];
+
 function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [tab, setTab] = useState("logs");
   const [logs, setLogs] = useState([]);
@@ -400,7 +444,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [uploading, setUploading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   
-  // Track selected filenames
+  // Track selected filenames for UI feedback
   const [logFile, setLogFile] = useState(null);
   const [docFile, setDocFile] = useState(null);
 
@@ -427,10 +471,207 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     showToast("Insurance Provider Updated");
   };
 
-  // ... (Keep handleUpload, generateSaleBundle, refreshData - hiding for brevity) ...
-  const handleUpload = async (e, type) => { /* ... Use previous code ... */ };
-  const generateSaleBundle = async () => { /* ... Use previous code ... */ };
-  const refreshData = async () => { /* ... Use previous code ... */ };
+  // --- REFRESH DATA FUNCTION ---
+  const refreshData = async () => {
+    setRefreshing(true);
+    try {
+      const res = await fetch("/api/vehicle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registration: vehicle.registration })
+      });
+      if (!res.ok) throw new Error("Failed to contact server");
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      const updates = {
+        make: data.make, model: data.model, colour: data.primaryColour,
+        engineSize: data.engineSize, fuelType: data.fuelType,
+        manufactureDate: data.manufactureDate, firstUsedDate: data.firstUsedDate,
+        taxExpiry: data.taxDueDate || "", motTests: data.motTests || [],
+        motExpiry: data.motTests ? data.motTests[0].expiryDate : "",
+        lastRefreshed: new Date().toISOString()
+      };
+      await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), updates);
+      showToast("Vehicle data refreshed!");
+    } catch (err) { showToast("Refresh failed: " + err.message, "error"); }
+    setRefreshing(false);
+  };
+
+  // --- GENERATE SALE BUNDLE FUNCTION ---
+  const generateSaleBundle = async () => {
+    showToast("Generating Bundle... (This may take a moment)", "success");
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      
+      doc.setFontSize(22);
+      doc.setTextColor(40, 40, 40);
+      doc.text(`Vehicle History Report`, 14, 20);
+      
+      doc.setDrawColor(200);
+      doc.setFillColor(245, 247, 250);
+      doc.rect(14, 30, pageWidth - 28, 40, "F");
+      
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text(vehicle.registration, 20, 42);
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text(`${vehicle.make} ${vehicle.model} (${vehicle.colour})`, 20, 48);
+      doc.text(`Engine: ${vehicle.engineSize || '-'}cc  |  Fuel: ${vehicle.fuelType || '-'}`, 20, 54);
+      const manYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : 'Unknown';
+      doc.text(`Manufactured: ${manYear}`, 20, 60);
+
+      let currentY = 80;
+
+      // Service History
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("Service & Maintenance", 14, currentY);
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Date', 'Type', 'Description', 'Cost']],
+        body: logs.map(l => [formatDate(l.date), l.type, l.desc, `£${l.cost.toFixed(2)}`]),
+        theme: 'striped',
+        headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255] }
+      });
+      currentY = doc.lastAutoTable.finalY + 15;
+
+      // Document Inventory
+      doc.text("Document Inventory", 14, currentY);
+      const docRows = docs.map(d => [d.name, d.expiry ? formatDate(d.expiry) : 'N/A', "Attached in Bundle"]);
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Document Name', 'Expiry Date', 'Status']],
+        body: docRows,
+        theme: 'grid',
+        headStyles: { fillColor: [16, 185, 129], textColor: [255, 255, 255] }
+      });
+      currentY = doc.lastAutoTable.finalY + 15;
+
+      // MOT History
+      doc.text("Recent MOT History", 14, currentY);
+      const motRows = (vehicle.motTests || []).slice(0, 10).map(m => {
+        const defects = m.defects || [];
+        const defectText = defects.length > 0 ? defects.map(d => `• ${d.text} (${d.type})`).join("\n") : "No Advisories";
+        return [formatDate(m.completedDate), m.testResult, m.odometerValue ? `${m.odometerValue} ${m.odometerUnit}` : "-", defectText];
+      });
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Date', 'Result', 'Mileage', 'Notes / Defects']],
+        body: motRows,
+        theme: 'grid',
+        headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255] },
+        columnStyles: { 0: { cellWidth: 25 }, 1: { cellWidth: 20, fontStyle: 'bold' }, 2: { cellWidth: 25 }, 3: { cellWidth: 'auto', fontSize: 8 } }
+      });
+
+      // Prepare Attachments
+      const allAttachments = [
+        ...docs.map(d => ({ type: 'doc', name: d.name, url: d.url, expiry: d.expiry })),
+        ...logs.filter(l => l.receipt).map(l => ({ type: 'log', name: `Receipt: ${l.desc}`, url: l.receipt, date: l.date, cost: l.cost, desc: l.desc }))
+      ];
+      const pdfAttachments = [];
+      const imageAttachments = [];
+
+      allAttachments.forEach(item => {
+        const isPdf = item.url.toLowerCase().includes('.pdf');
+        if (isPdf) pdfAttachments.push(item);
+        else if (item.url.match(/\.(jpeg|jpg|png|webp)/i) || item.url.includes('alt=media')) imageAttachments.push(item);
+      });
+
+      // Embed Images
+      for (const img of imageAttachments) {
+        try {
+          const imgData = await fetch(img.url).then(res => res.blob()).then(blob => {
+             return new Promise((resolve) => {
+               const reader = new FileReader();
+               reader.onloadend = () => resolve(reader.result);
+               reader.readAsDataURL(blob);
+             });
+          });
+          doc.addPage();
+          doc.setFontSize(16); doc.setFont("helvetica", "bold"); doc.text(`Appendix: ${img.name}`, 14, 20);
+          doc.setFontSize(11); doc.setFont("helvetica", "normal");
+          if(img.type === 'log') {
+             doc.text(`Date: ${formatDate(img.date)}`, 14, 28); doc.text(`Description: ${img.desc}`, 14, 34); doc.text(`Amount: £${img.cost.toFixed(2)}`, 14, 40);
+          } else { doc.text(`Expiry Date: ${img.expiry ? formatDate(img.expiry) : 'N/A'}`, 14, 28); }
+
+          const imgProps = doc.getImageProperties(imgData);
+          const pdfWidth = pageWidth - 40;
+          const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+          if (pdfHeight > pageHeight - 60) {
+             const scale = (pageHeight - 60) / pdfHeight;
+             doc.addImage(imgData, 'JPEG', 20, 50, pdfWidth * scale, pdfHeight * scale);
+          } else { doc.addImage(imgData, 'JPEG', 20, 50, pdfWidth, pdfHeight); }
+        } catch (e) { console.error("Error embedding image", e); }
+      }
+
+      // Merge PDFs
+      const reportBytes = doc.output('arraybuffer');
+      const mergedPdf = await PDFDocument.create();
+      const reportPdf = await PDFDocument.load(reportBytes);
+      const reportPages = await mergedPdf.copyPages(reportPdf, reportPdf.getPageIndices());
+      reportPages.forEach((page) => mergedPdf.addPage(page));
+
+      for (const item of pdfAttachments) {
+        try {
+          const externalPdfBytes = await fetch(item.url).then(res => res.arrayBuffer());
+          const externalPdf = await PDFDocument.load(externalPdfBytes);
+          const externalPages = await mergedPdf.copyPages(externalPdf, externalPdf.getPageIndices());
+          
+          const titlePage = mergedPdf.addPage();
+          const { width, height } = titlePage.getSize();
+          titlePage.drawText(`Appendix: ${item.name}`, { x: 50, y: height - 100, size: 24 });
+          if(item.type === 'log') {
+            titlePage.drawText(`Date: ${formatDate(item.date)}`, { x: 50, y: height - 150, size: 18 });
+            titlePage.drawText(`Description: ${item.desc}`, { x: 50, y: height - 180, size: 18 });
+            titlePage.drawText(`Amount: £${item.cost.toFixed(2)}`, { x: 50, y: height - 210, size: 18 });
+          } else {
+            titlePage.drawText(`Expiry Date: ${item.expiry ? formatDate(item.expiry) : 'N/A'}`, { x: 50, y: height - 150, size: 18 });
+          }
+          titlePage.drawText(`(Original Document Attached Next)`, { x: 50, y: height - 300, size: 12, color: rgb(0.5, 0.5, 0.5) });
+          externalPages.forEach((page) => mergedPdf.addPage(page));
+        } catch (err) { console.error("Could not merge PDF:", item.name, err); showToast(`Failed to merge ${item.name}`, 'error'); }
+      }
+
+      const pdfBytes = await mergedPdf.save();
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${vehicle.registration}_SaleBundle.pdf`;
+      link.click();
+      showToast("Sale Bundle Downloaded Successfully!");
+    } catch (err) { console.error("Bundle Error", err); showToast("Error generating bundle. Check console.", "error"); }
+  };
+
+  const handleUpload = async (e, type) => {
+    e.preventDefault();
+    setUploading(true);
+    try {
+      const form = new FormData(e.target);
+      const file = form.get("file");
+      if (!file || file.size === 0) throw new Error("Please select a file.");
+
+      const path = type === 'log' ? `receipts/${user.uid}/${vehicle.id}/${Date.now()}_${file.name}` 
+                                  : `documents/${user.uid}/${vehicle.id}/${Date.now()}_${file.name}`;
+      const storageRef = ref(storage, path);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+
+      const data = type === 'log' 
+        ? { date: form.get("date"), type: form.get("type"), desc: form.get("desc"), cost: parseFloat(form.get("cost")||0), receipt: url }
+        : { name: form.get("name"), expiry: form.get("expiry"), url, uploadedAt: new Date().toISOString() };
+        
+      await addDoc(collection(db, "users", user.uid, "vehicles", vehicle.id, type === 'log' ? "logs" : "documents"), data);
+      showToast(type === 'log' ? "Log added" : "Document saved");
+      e.target.reset();
+      if(type === 'log') setLogFile(null); else setDocFile(null);
+    } catch (err) { showToast(err.message, "error"); }
+    setUploading(false);
+  };
 
   const manufactureYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : (vehicle.manufactureDate ? new Date(vehicle.manufactureDate).getFullYear() : 'Unknown');
 
@@ -449,21 +690,18 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
          </div>
          
          <div style={{borderTop: '1px solid var(--border)', paddingTop: '10px'}}>
-           
-           {/* 1. FIXED: MOT IS NOW EDITABLE */}
+           {/* MOT NOW EDITABLE */}
            <EditableDateRow 
              label="MOT Expiry" 
              value={vehicle.motExpiry} 
              onChange={(val) => updateDate('motExpiry', val)} 
            />
-
            <EditableDateRow 
              label="Road Tax" 
              value={vehicle.taxExpiry} 
              onChange={(val) => updateDate('taxExpiry', val)} 
            />
-           
-           {/* 2. FIXED: INSURANCE ROW ALWAYS EXPANDABLE */}
+           {/* SMART INSURANCE ROW */}
            <ExpandableInsuranceRow 
              vehicle={vehicle} 
              logoKey={LOGO_DEV_PK}
@@ -481,7 +719,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
          </div>
       </div>
 
-      {/* TABS SECTION */}
       <div>
         <div className="tabs">
           <button onClick={() => setTab("logs")} className={`tab-btn ${tab==='logs'?'active':''}`}>Service History</button>
@@ -509,7 +746,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
                 {uploading ? <div className="spinner"></div> : "Save Entry"}
               </button>
             </form>
-
             <div style={{display:'flex', flexDirection:'column', gap:'12px'}}>
               {logs.length === 0 && <EmptyState text="No logs recorded." />}
               {logs.map(log => (
@@ -530,13 +766,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
 
         {tab === 'mot' && (
           <div className="fade-in">
-             {!vehicle.motTests || vehicle.motTests.length === 0 ? (
-               <EmptyState text="No MOT history found." />
-             ) : (
-               vehicle.motTests.map((test, index) => (
-                 <MotTestCard key={index} test={test} />
-               ))
-             )}
+             {!vehicle.motTests || vehicle.motTests.length === 0 ? <EmptyState text="No MOT history found." /> : vehicle.motTests.map((test, index) => <MotTestCard key={index} test={test} />)}
           </div>
         )}
 
@@ -578,23 +808,23 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   );
 }
 
-// --- UPDATED INSURANCE COMPONENT (With Edit Mode) ---
+// --- UPDATED INSURANCE ROW (With Local UK Search) ---
 const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoKey }) => {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
+  const [filteredResults, setFilteredResults] = useState([]);
 
+  // Filter Local UK List
   useEffect(() => {
-    const delaySearch = setTimeout(async () => {
-      if (searchTerm.length < 2) { setSearchResults([]); return; }
-      try {
-        const res = await fetch(`/api/insurer-search?q=${encodeURIComponent(searchTerm)}`);
-        const data = await res.json();
-        setSearchResults(data || []);
-      } catch (e) { console.error(e); }
-    }, 500);
-    return () => clearTimeout(delaySearch);
+    if (searchTerm.length < 1) {
+      setFilteredResults([]);
+      return;
+    }
+    const matches = UK_INSURERS.filter(ins => 
+      ins.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    setFilteredResults(matches);
   }, [searchTerm]);
 
   const hasProvider = vehicle.insuranceProvider || vehicle.insuranceDomain;
@@ -605,34 +835,20 @@ const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoK
         <div className="row-label" style={{flex:1}}>
           <StatusDot date={vehicle.insuranceExpiry} /> Insurance
         </div>
-        
         <div className="insurance-row-container">
-            {/* Date Picker */}
             <div className="row-value" style={{position:'relative', flex:1, textAlign:'right'}}>
               {vehicle.insuranceExpiry ? formatDate(vehicle.insuranceExpiry) : <span style={{color:'var(--primary)', fontSize:'0.9rem'}}>Set Date</span>}
-              <input 
-                 type="date" 
-                 className="hidden-date-input" 
-                 value={vehicle.insuranceExpiry || ""} 
-                 onChange={(e) => onDateChange(e.target.value)} 
-              />
+              <input type="date" className="hidden-date-input" value={vehicle.insuranceExpiry || ""} onChange={(e) => onDateChange(e.target.value)} />
             </div>
-
-            {/* SPACED OUT EXPAND BUTTON - Always visible now */}
-            <div 
-              className="row-action-area" 
-              onClick={() => setExpanded(!expanded)}
-              style={{cursor:'pointer', minWidth: '40px', display:'flex', justifyContent:'center'}}
-            >
+            {/* Always visible expand button */}
+            <div className="row-action-area" onClick={() => setExpanded(!expanded)} style={{cursor:'pointer', minWidth:'40px', display:'flex', justifyContent:'center'}}>
               <span className="row-expand-icon">▼</span>
             </div>
         </div>
       </div>
 
-      {/* Expanded Card */}
       {expanded && (
         <div className="insurance-details" style={{flexDirection:'column', alignItems:'stretch'}}>
-           
            {!editing && hasProvider && (
              <div style={{display:'flex', alignItems:'center', gap:'16px'}}>
                 {vehicle.insuranceDomain ? (
@@ -640,19 +856,14 @@ const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoK
                 ) : (
                   <div className="insurance-logo-large" style={{display:'flex', alignItems:'center', justifyContent:'center', color:'#000', fontWeight:'bold'}}>{vehicle.insuranceProvider.charAt(0)}</div>
                 )}
-                
                 <div style={{flex:1}}>
                    <h4 style={{color:'white'}}>{vehicle.insuranceProvider}</h4>
                    <p style={{color:'#9ca3af', fontSize:'0.85rem'}}>Policy expires {formatDate(vehicle.insuranceExpiry)}</p>
                 </div>
-
-                <button onClick={() => setEditing(true)} style={{background:'none', border:'none', color:'var(--primary)', cursor:'pointer', fontSize:'0.85rem'}}>
-                  Edit
-                </button>
+                <button onClick={() => setEditing(true)} style={{background:'none', border:'none', color:'var(--primary)', cursor:'pointer', fontSize:'0.85rem'}}>Edit</button>
              </div>
            )}
 
-           {/* IF NO PROVIDER SET OR EDITING */}
            {(!hasProvider || editing) && (
              <div className="insurance-edit-box">
                 <div style={{display:'flex', justifyContent:'space-between', marginBottom:'10px'}}>
@@ -661,16 +872,16 @@ const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoK
                 </div>
                 
                 <input 
-                  placeholder="Search provider (e.g. Admiral)..." 
+                  placeholder="Search provider (e.g. LV)..." 
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
                   style={{width:'100%', padding:'10px', borderRadius:'6px', border:'1px solid var(--border)', background:'#0f1115', color:'white'}}
                   autoFocus
                 />
 
-                {searchResults.length > 0 && (
+                {filteredResults.length > 0 && (
                   <div className="search-results" style={{position:'static', marginTop:'10px', maxHeight:'150px'}}>
-                     {searchResults.map((res, i) => (
+                     {filteredResults.map((res, i) => (
                        <div key={i} className="search-item" onClick={() => {
                           onProviderChange(res.name, res.domain);
                           setEditing(false);
