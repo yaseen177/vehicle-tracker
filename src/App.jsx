@@ -448,7 +448,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [logFile, setLogFile] = useState(null);
   const [docFile, setDocFile] = useState(null);
 
-  const LOGO_DEV_PK = "pk_X6jL5yCCT5uMaaQW4-34sA"; 
+  const LOGO_DEV_PK = "pk_XnIP3CQSQoGp70yuA4nesA"; 
 
   useEffect(() => {
     const unsubLogs = onSnapshot(query(collection(db, "users", user.uid, "vehicles", vehicle.id, "logs"), orderBy("date", "desc")), 
