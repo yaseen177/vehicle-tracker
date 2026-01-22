@@ -577,14 +577,13 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
       doc.setFontSize(22);
       doc.setTextColor(40, 40, 40);
       doc.text(`Vehicle History Report`, 14, 20);
-
-      // ADD QR CODE to Top Right
-      doc.addImage(qrUrl, 'PNG', pageWidth - 35, 10, 25, 25);
       
       // Car Details Box
       doc.setDrawColor(200);
       doc.setFillColor(245, 247, 250);
       doc.rect(14, 30, pageWidth - 28, 40, "F");
+
+      doc.addImage(qrUrl, 'PNG', pageWidth - 35, 10, 25, 25);
       
       doc.setFontSize(16);
       doc.setFont("helvetica", "bold");
