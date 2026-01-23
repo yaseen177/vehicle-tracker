@@ -176,6 +176,11 @@ function MainApp() {
            My Garage {view === 'dashboard' && activeVehicle && <span style={{opacity:0.5, fontWeight:400}}> / {activeVehicle.registration}</span>}
         </div>
         <div style={{display:'flex', gap:'12px'}}>
+          {/* NEW PROFILE BUTTON */}
+          <button onClick={() => setView("profile")} className="btn btn-secondary btn-sm" style={{fontSize:'1.2rem'}}>👤</button>
+          <button onClick={() => signOut(auth)} className="btn btn-secondary btn-sm">Sign Out</button>
+        </div>
+        <div style={{display:'flex', gap:'12px'}}>
           {/* UPDATED BACK BUTTON */}
           {view === 'dashboard' && <button onClick={handleBack} className="btn btn-secondary">Back</button>}
           <button onClick={() => signOut(auth)} className="btn btn-secondary btn-sm">Sign Out</button>
@@ -199,6 +204,8 @@ function MainApp() {
           showToast={showToast}
         />
       )}
+
+      {view === 'profile' && <ProfileView user={user} showToast={showToast} />}
     </div>
   );
 }
@@ -261,7 +268,7 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
 
-  const LOGO_DEV_PK = "pk_XnIP3CQSQoGp70yuA4nesA"; 
+  const LOGO_DEV_PK = env.LOGO_DEV_PK;
 
   // Top 6 for the Quick Grid
   const commonInsurers = [
@@ -614,7 +621,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [shareQr, setShareQr] = useState(null);
   const [sharing, setSharing] = useState(false);
 
-  const LOGO_DEV_PK = "pk_XnIP3CQSQoGp70yuA4nesA"; 
+  const LOGO_DEV_PK = env.LOGO_DEV_PK;
 
   useEffect(() => {
     const unsubLogs = onSnapshot(query(collection(db, "users", user.uid, "vehicles", vehicle.id, "logs"), orderBy("date", "desc")), 
@@ -627,6 +634,13 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   const updateDate = async (field, value) => {
     await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), { [field]: value });
     showToast("Date updated");
+    
+    // Format readable date
+    const niceDate = new Date(value).toLocaleDateString('en-GB');
+    const type = field === 'motExpiry' ? 'MOT' : field === 'taxExpiry' ? 'Tax' : 'Insurance';
+    
+    // Send SMS
+    sendUpdateSms(`Your ${vehicle.registration} ${type} due date has been updated to ${niceDate}.`);
   };
 
   const updateProvider = async (name, domain) => {
@@ -658,6 +672,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
         lastRefreshed: new Date().toISOString()
       };
       await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), updates);
+      sendUpdateSms(`Vehicle data for ${vehicle.registration} has been refreshed from DVLA/DVSA.`);
       showToast("Vehicle data refreshed!");
     } catch (err) { showToast("Refresh failed: " + err.message, "error"); }
     setRefreshing(false);
@@ -875,6 +890,26 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   };
 
   const manufactureYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : (vehicle.manufactureDate ? new Date(vehicle.manufactureDate).getFullYear() : 'Unknown');
+
+  // Add this helper inside DashboardView
+const sendUpdateSms = async (msg) => {
+  // 1. Get User Profile to check for phone number
+  const userDoc = await getDoc(doc(db, "users", user.uid));
+  if (userDoc.exists()) {
+    const userData = userDoc.data();
+    if (userData.phoneNumber && userData.smsEnabled) {
+      // 2. Fire and forget (don't wait for it)
+      fetch('/api/send-sms', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+           to: userData.phoneNumber,
+           body: `My Garage: ${msg}`
+        })
+      });
+    }
+  }
+};
 
   return (
     <div className="dashboard-grid fade-in">
@@ -1237,5 +1272,90 @@ const EmptyState = ({ text }) => (
     {text}
   </div>
 );
+
+function ProfileView({ user, showToast }) {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // Load existing profile on mount
+  useEffect(() => {
+    const loadProfile = async () => {
+      const docSnap = await getDoc(doc(db, "users", user.uid)); // Ensure getDoc is imported
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setName(data.displayName || "");
+        setPhone(data.phoneNumber || "");
+      }
+    };
+    loadProfile();
+  }, [user.uid]);
+
+  const handleSave = async () => {
+    // Basic UK Number Validation (Starts with +44 or 07)
+    let cleanPhone = phone.replace(/\s+/g, '');
+    if (cleanPhone.startsWith('07')) {
+      cleanPhone = '+44' + cleanPhone.substring(1);
+    }
+
+    if (!cleanPhone.startsWith('+44') || cleanPhone.length < 11) {
+      showToast("Please enter a valid UK mobile (+44...)", "error");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await setDoc(doc(db, "users", user.uid), {
+        displayName: name,
+        phoneNumber: cleanPhone,
+        smsEnabled: true
+      }, { merge: true });
+
+      // Send a test welcome SMS
+      await fetch('/api/send-sms', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+           to: cleanPhone,
+           body: `Hi ${name}, welcome to My Garage! SMS alerts are now active for your vehicle reminders.`
+        })
+      });
+
+      showToast("Profile Saved & Test SMS Sent!");
+    } catch (e) {
+      showToast("Error saving profile", "error");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="fade-in" style={{maxWidth:'500px', margin:'40px auto'}}>
+       <div className="bento-card">
+          <h2>Your Profile</h2>
+          <p style={{marginBottom:'20px'}}>Enable SMS reminders for MOT, Tax, and Insurance.</p>
+          
+          <label style={{display:'block', marginBottom:'8px', fontSize:'0.9rem'}}>Full Name</label>
+          <input 
+            value={name} 
+            onChange={e => setName(e.target.value)} 
+            placeholder="Joe Bloggs" 
+            style={{width:'100%', padding:'12px', background:'#0f1115', border:'1px solid var(--border)', color:'white', borderRadius:'8px', marginBottom:'20px'}}
+          />
+
+          <label style={{display:'block', marginBottom:'8px', fontSize:'0.9rem'}}>Mobile Number (UK Only)</label>
+          <input 
+            value={phone} 
+            onChange={e => setPhone(e.target.value)} 
+            placeholder="+44 7123 456789" 
+            style={{width:'100%', padding:'12px', background:'#0f1115', border:'1px solid var(--border)', color:'white', borderRadius:'8px', marginBottom:'20px'}}
+          />
+
+          <button onClick={handleSave} disabled={loading} className="btn btn-primary btn-full">
+            {loading ? "Saving..." : "Enable SMS Alerts"}
+          </button>
+       </div>
+    </div>
+  );
+}
 
 export default App;
