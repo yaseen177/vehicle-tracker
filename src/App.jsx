@@ -1120,8 +1120,8 @@ return (
        </div>
     </div>
 
-    // --- RIGHT COLUMN (TABS & HISTORY) ---
-<div>
+    {/* --- RIGHT COLUMN (TABS & HISTORY) (Unchanged) --- */}
+    <div>
   {/* WRAP THE CHART IN A DIV WITH FIXED HEIGHT */}
   <div style={{ height: '250px', width: '100%', marginBottom: '20px' }}>
       <MileageAnalysis motTests={vehicle.motTests} />
