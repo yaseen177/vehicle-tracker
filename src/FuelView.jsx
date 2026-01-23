@@ -54,6 +54,7 @@ const mapStyles = [
 export default function FuelView({ googleMapsApiKey, logoKey }) {
   const mapRef = useRef(null);
   const [searchCenter, setSearchCenter] = useState({ lat: 51.5074, lng: -0.1278 });
+  const [viewCenter, setViewCenter] = useState({ lat: 51.5074, lng: -0.1278 }); 
   const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStation, setSelectedStation] = useState(null);
@@ -93,6 +94,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         (position) => {
           const pos = { lat: position.coords.latitude, lng: position.coords.longitude };
           setSearchCenter(pos);
+          setViewCenter(pos); // Sync view initially
           setUserLocation(pos);
         },
         () => console.warn("GPS Permission denied")
@@ -109,6 +111,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         const loc = results[0].geometry.location;
         const newPos = { lat: loc.lat(), lng: loc.lng() };
         setSearchCenter(newPos);
+        setViewCenter(newPos); // Move camera to new search
         setRadius(5); 
       } else {
         alert("Postcode not found!");
@@ -135,7 +138,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const nearbyStations = useMemo(() => {
     if (!stations.length) return [];
     
-    // Filter by Distance from SEARCH CENTER
     const local = stations.filter(s => {
       const dist = getDistance(searchCenter.lat, searchCenter.lng, s.location.latitude, s.location.longitude);
       s.distance = dist;
@@ -143,7 +145,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     });
 
     if (local.length > 0) {
-      // Calculate Average
       const avgPrice = local.reduce((acc, s) => acc + (s.prices[fuelType] || 0), 0) / local.length;
       
       const colored = local.map(s => {
@@ -154,7 +155,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         return { ...s, color };
       });
 
-      // Sort
       return colored.sort((a, b) => (a.prices[fuelType] || 999) - (b.prices[fuelType] || 999));
     }
     return [];
@@ -165,7 +165,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   return (
     <div className="fade-in" style={{height:'100%', display:'flex', flexDirection:'column', overflow:'hidden'}}>
       
-      {/* Remove Default Close Button */}
       <style>{`
         .gm-ui-hover-effect { display: none !important; }
       `}</style>
@@ -189,7 +188,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         {/* Row 2: Fuel Toggle & Radius */}
         <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:'12px'}}>
            
-           {/* Fuel Toggle */}
            <div style={{display:'flex', background:'rgba(255,255,255,0.1)', borderRadius:'8px', padding:'2px'}}>
               <button 
                 onClick={() => setFuelType('E10')}
@@ -209,7 +207,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
               >Diesel</button>
            </div>
 
-           {/* Radius Slider - VISIBLE NOW */}
            <div style={{display:'flex', flexDirection:'column', flex:1, marginLeft:'10px'}}>
               <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.75rem', color:'#9ca3af', marginBottom:'4px'}}>
                 <span>Radius</span>
@@ -221,7 +218,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                 style={{
                   width: '100%', 
                   height: '6px', 
-                  background: '#4b5563', // Visible grey background
+                  background: '#4b5563', 
                   borderRadius: '4px',
                   outline: 'none',
                   opacity: '0.9',
@@ -239,6 +236,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         <div style={{height:'45vh', minHeight:'250px', borderRadius:'12px', overflow:'hidden', border:'1px solid var(--border)', flexShrink:0}}>
           <GoogleMap
             mapContainerStyle={containerStyle}
+            center={viewCenter} // <--- FIXED: Added center prop back
+            zoom={13}           // <--- FIXED: Added zoom prop back
             onLoad={map => mapRef.current = map}
             options={{
               styles: mapStyles,
@@ -253,8 +252,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                 key={i}
                 position={{ lat: station.location.latitude, lng: station.location.longitude }}
                 onClick={() => setSelectedStation(station)}
-                // --- FIXED: Use correct Google Maps Icon URL ---
-                icon={`https://maps.google.com/mapfiles/ms/icons/${station.color === 'green' ? 'green' : station.color === 'orange' ? 'orange' : 'red'}-dot.png`}
+                // <--- FIXED: Corrected the broken URL string below
+                icon={`http://maps.google.com/mapfiles/ms/icons/${station.color === 'green' ? 'green' : station.color === 'orange' ? 'orange' : 'red'}-dot.png`}
               />
             ))}
 
