@@ -12,6 +12,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import "./App.css";
+import FuelView from './FuelView';
 
 // --- HUGE LIST OF UK INSURERS (Static Data) ---
 const UK_INSURERS = [
@@ -178,6 +179,8 @@ function MainApp() {
         </div>
         <div style={{display:'flex', gap:'12px'}}>
            {view === 'dashboard' && <button onClick={handleBack} className="btn btn-secondary">Back</button>}
+           <button onClick={() => setView("fuel")} className="btn btn-secondary btn-sm" style={{fontSize:'1.2rem', padding:'4px 12px'}}>⛽</button>
+
            <button onClick={() => setView("profile")} className="btn btn-secondary btn-sm" style={{fontSize:'1.2rem', padding:'4px 12px'}}>👤</button>
         </div>
       </header>
@@ -209,6 +212,12 @@ function MainApp() {
             onSignOut={() => signOut(auth)}
           />
         )}
+
+        {/* --- ADD THIS SECTION HERE --- */}
+        {view === 'fuel' && (
+          <FuelView googleMapsApiKey={import.meta.env.VITE_GOOGLE_MAPS_KEY} />
+        )}
+
       </div>
 
       {/* 4. NEW FOOTER */}
