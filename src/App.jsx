@@ -628,6 +628,30 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
 
   const LOGO_DEV_PK = import.meta.env.VITE_LOGO_DEV_PK;
 
+  const getBrandDomain = (make) => {
+    if (!make) return 'auto.com';
+    const m = make.toLowerCase().trim().replace(/ /g, ''); // "LAND ROVER" -> "landrover"
+    
+    // Manual overrides for tricky brands
+    const overrides = {
+      'vw': 'volkswagen.com',
+      'volkswagen': 'volkswagen.com',
+      'mercedes-benz': 'mercedes-benz.com',
+      'mercedes': 'mercedes-benz.com',
+      'landrover': 'landrover.com',
+      'rangerover': 'landrover.com',
+      'citroen': 'citroen.co.uk',
+      'vauxhall': 'vauxhall.co.uk', // Specific to UK
+      'mini': 'mini.co.uk',
+      'jaguar': 'jaguar.com',
+      'tesla': 'tesla.com',
+      'porsche': 'porsche.com'
+    };
+    
+    // Default: try "brand.com" (Works for Ford, Honda, BMW, Audi, Toyota, etc.)
+    return overrides[m] || `${m}.com`;
+  };
+
   useEffect(() => {
     const unsubLogs = onSnapshot(query(collection(db, "users", user.uid, "vehicles", vehicle.id, "logs"), orderBy("date", "desc")), 
       snap => setLogs(snap.docs.map(d => ({id:d.id, ...d.data()}))));
@@ -930,166 +954,196 @@ const sendUpdateSms = async (msg) => {
   }
 };
 
-  return (
-    <div className="dashboard-grid fade-in">
-      {/* --- SHARE MODAL --- */}
-      {shareQr && (
-        <div className="modal-overlay" onClick={() => setShareQr(null)}>
-           <div className="wizard-card" onClick={e => e.stopPropagation()} style={{textAlign:'center', maxWidth:'350px'}}>
-              <h2 style={{color:'white'}}>Scan to View</h2>
-              <p style={{marginBottom:'20px'}}>Show this to a buyer. It opens the PDF instantly.</p>
-              
-              <div style={{background:'white', padding:'20px', borderRadius:'12px', display:'inline-block', marginBottom:'20px'}}>
-                 <img src={shareQr} alt="QR Code" style={{width:'200px', height:'200px'}} />
-              </div>
-              
-              <div style={{fontSize:'0.9rem', color:'#999', wordBreak:'break-all'}}>
-                 <a href={shareUrl} target="_blank" style={{color:'var(--primary)'}}>Test Link (Click Here)</a>
-              </div>
-              
-              <button onClick={() => setShareQr(null)} className="btn btn-secondary btn-full" style={{marginTop:'20px'}}>Close</button>
+return (
+  <div className="dashboard-grid fade-in">
+    {/* --- SHARE MODAL --- */}
+    {shareQr && (
+      <div className="modal-overlay" onClick={() => setShareQr(null)}>
+         <div className="wizard-card" onClick={e => e.stopPropagation()} style={{textAlign:'center', maxWidth:'350px'}}>
+            <h2 style={{color:'white'}}>Scan to View</h2>
+            <p style={{marginBottom:'20px'}}>Show this to a buyer. It opens the PDF instantly.</p>
+            
+            <div style={{background:'white', padding:'20px', borderRadius:'12px', display:'inline-block', marginBottom:'20px'}}>
+               <img src={shareQr} alt="QR Code" style={{width:'200px', height:'200px'}} />
+            </div>
+            
+            <div style={{fontSize:'0.9rem', color:'#999', wordBreak:'break-all'}}>
+               <a href={shareUrl} target="_blank" style={{color:'var(--primary)'}}>Test Link (Click Here)</a>
+            </div>
+            
+            <button onClick={() => setShareQr(null)} className="btn btn-secondary btn-full" style={{marginTop:'20px'}}>Close</button>
+         </div>
+      </div>
+    )}
+
+    {/* --- MAIN SIDEBAR CARD --- */}
+    <div className="bento-card sidebar-sticky">
+       
+       {/* NEW: LOGO + PLATE HEADER */}
+       <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', 
+          gap: '16px', marginBottom: '10px', flexWrap: 'wrap'
+       }}>
+           {/* Logo Circle */}
+           <div style={{
+             width: '52px', height: '52px', background: 'white', borderRadius: '50%', 
+             display: 'flex', alignItems: 'center', justifyContent: 'center',
+             boxShadow: '0 4px 12px rgba(0,0,0,0.3)', padding: '6px'
+           }}>
+              <img 
+                src={`https://img.logo.dev/${getBrandDomain(vehicle.make)}?token=${LOGO_DEV_PK}&size=100&format=png`} 
+                onError={(e) => e.target.style.display='none'}
+                alt={vehicle.make}
+                style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}}
+              />
            </div>
+
+           {/* Registration Plate */}
+           <div className="plate-wrapper" style={{margin:0}}>
+              <div className="car-plate">{vehicle.registration}</div>
+           </div>
+       </div>
+
+       <h2 style={{textAlign:'center', marginBottom:'4px'}}>{vehicle.make}</h2>
+       <p style={{textAlign:'center', color:'#9ca3af', marginTop:0}}>{vehicle.model}</p>
+       
+       {/* SPECS GRID */}
+       <div style={{marginTop:'20px', marginBottom:'20px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
+           <div className="spec-box"><div className="spec-label">Year</div><div className="spec-val">{manufactureYear}</div></div>
+           <div className="spec-box"><div className="spec-label">Engine</div><div className="spec-val">{vehicle.engineSize ? `${vehicle.engineSize}cc` : '-'}</div></div>
+           <div className="spec-box"><div className="spec-label">Fuel</div><div className="spec-val">{vehicle.fuelType || '-'}</div></div>
+           <div className="spec-box"><div className="spec-label">Colour</div><div className="spec-val">{vehicle.colour}</div></div>
+       </div>
+       
+       {/* DATES & EDITORS */}
+       <div style={{borderTop: '1px solid var(--border)', paddingTop: '10px'}}>
+         <EditableDateRow 
+           label="MOT Expiry" 
+           value={vehicle.motExpiry} 
+           onChange={(val) => updateDate('motExpiry', val)} 
+         />
+         <EditableDateRow 
+           label="Road Tax" 
+           value={vehicle.taxExpiry} 
+           onChange={(val) => updateDate('taxExpiry', val)} 
+         />
+         <ExpandableInsuranceRow 
+           vehicle={vehicle} 
+           logoKey={LOGO_DEV_PK}
+           onDateChange={(val) => updateDate('insuranceExpiry', val)}
+           onProviderChange={updateProvider}
+         />
+       </div>
+       
+       {/* ACTION BUTTONS */}
+       <div style={{marginTop:'30px', display:'flex', flexDirection:'column', gap:'10px'}}>
+          <button onClick={refreshData} disabled={refreshing} className="btn btn-secondary btn-full">
+             {refreshing ? "Refreshing..." : "🔄 Refresh Vehicle Data"}
+          </button>
+          
+          <div style={{display:'flex', gap:'10px'}}>
+              <button onClick={handleDownloadReport} className="btn btn-full" style={{flex:1, background: 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)', color:'black', border:'none'}}>
+                📥 Download PDF
+              </button>
+              <button onClick={handleShareReport} disabled={sharing} className="btn btn-secondary" style={{width:'60px', display:'flex', alignItems:'center', justifyContent:'center'}}>
+                 {sharing ? <div className="spinner" style={{width:16,height:16}}></div> : "🔗"}
+              </button>
+          </div>
+
+          <button onClick={onDelete} className="btn btn-danger btn-full btn-sm">Delete Vehicle</button>
+       </div>
+    </div>
+
+    {/* --- RIGHT COLUMN (TABS & HISTORY) --- */}
+    <div>
+      <MileageAnalysis motTests={vehicle.motTests} />
+
+      <div className="tabs" style={{marginTop:'20px'}}>
+        <button onClick={() => setTab("logs")} className={`tab-btn ${tab==='logs'?'active':''}`}>Service History</button>
+        <button onClick={() => setTab("mot")} className={`tab-btn ${tab==='mot'?'active':''}`}>MOT History</button>
+        <button onClick={() => setTab("docs")} className={`tab-btn ${tab==='docs'?'active':''}`}>Documents</button>
+      </div>
+
+      {tab === 'logs' && (
+        <>
+          <form onSubmit={e => handleUpload(e, 'log')} className="bento-card" style={{marginBottom:'24px'}}>
+            <h3>Add New Service Log</h3>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px'}}>
+              <input type="date" name="date" required />
+              <select name="type"><option>Service</option><option>Repair</option><option>Part</option><option>Other</option></select>
+            </div>
+            <input name="desc" placeholder="Description (e.g. Brake Pads)" required style={{marginBottom:'12px'}} />
+            <div style={{display:'grid', gridTemplateColumns:'100px 1fr', gap:'12px'}}>
+              <input type="number" step="0.01" name="cost" placeholder="£0.00" />
+              <div className={`file-upload-box ${logFile ? 'has-file' : ''}`}>
+                 <span>{uploading ? "Uploading..." : (logFile ? `✅ ${logFile}` : "Attach Receipt")}</span>
+                 <input type="file" name="file" onChange={(e) => setLogFile(e.target.files[0]?.name)} />
+              </div>
+            </div>
+            <button disabled={uploading} className="btn btn-primary btn-full" style={{marginTop:'12px'}}>
+              {uploading ? <div className="spinner"></div> : "Save Entry"}
+            </button>
+          </form>
+          <div style={{display:'flex', flexDirection:'column', gap:'12px'}}>
+            {logs.length === 0 && <EmptyState text="No logs recorded." />}
+            {logs.map(log => (
+              <div key={log.id} className="list-item">
+                <div style={{minWidth:'100px', fontWeight:'600', color:'white'}}>{formatDate(log.date)}</div>
+                <div style={{minWidth:'80px'}}><span style={{background:'rgba(255,255,255,0.1)', padding:'4px 8px', borderRadius:'4px', fontSize:'0.8rem'}}>{log.type}</span></div>
+                <div style={{flex:1, color:'var(--text-muted)'}}>{log.desc}</div>
+                <div style={{minWidth:'80px', fontWeight:'700', color:'white'}}>£{log.cost}</div>
+                <div style={{display:'flex', gap:'10px'}}>
+                  {log.receipt && <a href={log.receipt} target="_blank" className="btn btn-secondary btn-sm" style={{padding:'6px 10px'}}>View</a>}
+                  <button onClick={() => deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, "logs", log.id))} className="btn btn-danger btn-sm" style={{padding:'6px 10px'}}>×</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {tab === 'mot' && (
+        <div className="fade-in">
+           {!vehicle.motTests || vehicle.motTests.length === 0 ? <EmptyState text="No MOT history found." /> : vehicle.motTests.map((test, index) => <MotTestCard key={index} test={test} />)}
         </div>
       )}
 
-      <div className="bento-card sidebar-sticky">
-         <div className="plate-wrapper"><div className="car-plate">{vehicle.registration}</div></div>
-         <h2>{vehicle.make}</h2>
-         <p>{vehicle.model}</p>
-         
-         <div style={{marginTop:'20px', marginBottom:'20px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
-             <div className="spec-box"><div className="spec-label">Year</div><div className="spec-val">{manufactureYear}</div></div>
-             <div className="spec-box"><div className="spec-label">Engine</div><div className="spec-val">{vehicle.engineSize ? `${vehicle.engineSize}cc` : '-'}</div></div>
-             <div className="spec-box"><div className="spec-label">Fuel</div><div className="spec-val">{vehicle.fuelType || '-'}</div></div>
-             <div className="spec-box"><div className="spec-label">Colour</div><div className="spec-val">{vehicle.colour}</div></div>
-         </div>
-         
-         <div style={{borderTop: '1px solid var(--border)', paddingTop: '10px'}}>
-           <EditableDateRow 
-             label="MOT Expiry" 
-             value={vehicle.motExpiry} 
-             onChange={(val) => updateDate('motExpiry', val)} 
-           />
-           <EditableDateRow 
-             label="Road Tax" 
-             value={vehicle.taxExpiry} 
-             onChange={(val) => updateDate('taxExpiry', val)} 
-           />
-           <ExpandableInsuranceRow 
-             vehicle={vehicle} 
-             logoKey={LOGO_DEV_PK}
-             onDateChange={(val) => updateDate('insuranceExpiry', val)}
-             onProviderChange={updateProvider}
-           />
-         </div>
-         
-         <div style={{marginTop:'30px', display:'flex', flexDirection:'column', gap:'10px'}}>
-            <button onClick={refreshData} disabled={refreshing} className="btn btn-secondary btn-full">
-               {refreshing ? "Refreshing..." : "🔄 Refresh Vehicle Data"}
-            </button>
-            
-            <div style={{display:'flex', gap:'10px'}}>
-                <button onClick={handleDownloadReport} className="btn btn-full" style={{flex:1, background: 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)', color:'black', border:'none'}}>
-                  📥 Download PDF
-                </button>
-                <button onClick={handleShareReport} disabled={sharing} className="btn btn-secondary" style={{width:'60px', display:'flex', alignItems:'center', justifyContent:'center'}}>
-                   {sharing ? <div className="spinner" style={{width:16,height:16}}></div> : "🔗"}
-                </button>
-            </div>
-
-            <button onClick={onDelete} className="btn btn-danger btn-full btn-sm">Delete Vehicle</button>
-         </div>
-      </div>
-
-      <div>
-        <MileageAnalysis motTests={vehicle.motTests} />
-
-        <div className="tabs" style={{marginTop:'20px'}}>
-          <button onClick={() => setTab("logs")} className={`tab-btn ${tab==='logs'?'active':''}`}>Service History</button>
-          <button onClick={() => setTab("mot")} className={`tab-btn ${tab==='mot'?'active':''}`}>MOT History</button>
-          <button onClick={() => setTab("docs")} className={`tab-btn ${tab==='docs'?'active':''}`}>Documents</button>
-        </div>
-
-        {tab === 'logs' && (
-          <>
-            <form onSubmit={e => handleUpload(e, 'log')} className="bento-card" style={{marginBottom:'24px'}}>
-              <h3>Add New Service Log</h3>
-              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px'}}>
-                <input type="date" name="date" required />
-                <select name="type"><option>Service</option><option>Repair</option><option>Part</option><option>Other</option></select>
-              </div>
-              <input name="desc" placeholder="Description (e.g. Brake Pads)" required style={{marginBottom:'12px'}} />
-              <div style={{display:'grid', gridTemplateColumns:'100px 1fr', gap:'12px'}}>
-                <input type="number" step="0.01" name="cost" placeholder="£0.00" />
-                <div className={`file-upload-box ${logFile ? 'has-file' : ''}`}>
-                   <span>{uploading ? "Uploading..." : (logFile ? `✅ ${logFile}` : "Attach Receipt")}</span>
-                   <input type="file" name="file" onChange={(e) => setLogFile(e.target.files[0]?.name)} />
-                </div>
-              </div>
-              <button disabled={uploading} className="btn btn-primary btn-full" style={{marginTop:'12px'}}>
-                {uploading ? <div className="spinner"></div> : "Save Entry"}
-              </button>
-            </form>
-            <div style={{display:'flex', flexDirection:'column', gap:'12px'}}>
-              {logs.length === 0 && <EmptyState text="No logs recorded." />}
-              {logs.map(log => (
-                <div key={log.id} className="list-item">
-                  <div style={{minWidth:'100px', fontWeight:'600', color:'white'}}>{formatDate(log.date)}</div>
-                  <div style={{minWidth:'80px'}}><span style={{background:'rgba(255,255,255,0.1)', padding:'4px 8px', borderRadius:'4px', fontSize:'0.8rem'}}>{log.type}</span></div>
-                  <div style={{flex:1, color:'var(--text-muted)'}}>{log.desc}</div>
-                  <div style={{minWidth:'80px', fontWeight:'700', color:'white'}}>£{log.cost}</div>
-                  <div style={{display:'flex', gap:'10px'}}>
-                    {log.receipt && <a href={log.receipt} target="_blank" className="btn btn-secondary btn-sm" style={{padding:'6px 10px'}}>View</a>}
-                    <button onClick={() => deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, "logs", log.id))} className="btn btn-danger btn-sm" style={{padding:'6px 10px'}}>×</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {tab === 'mot' && (
-          <div className="fade-in">
-             {!vehicle.motTests || vehicle.motTests.length === 0 ? <EmptyState text="No MOT history found." /> : vehicle.motTests.map((test, index) => <MotTestCard key={index} test={test} />)}
-          </div>
-        )}
-
-        {tab === 'docs' && (
-          <>
-            <form onSubmit={e => handleUpload(e, 'doc')} className="bento-card" style={{marginBottom:'24px'}}>
-               <h3>Upload Document</h3>
-               <div style={{display:'grid', gap:'12px'}}>
-                 <input name="name" placeholder="Name (e.g. V5C)" required />
-                 <input type="date" name="expiry" />
-                 <div className={`file-upload-box ${docFile ? 'has-file' : ''}`}>
-                   <span>{uploading ? "Uploading..." : (docFile ? `✅ ${docFile}` : "Select PDF / Image")}</span>
-                   <input type="file" name="file" required onChange={(e) => setDocFile(e.target.files[0]?.name)} />
-                 </div>
-                 <button disabled={uploading} className="btn btn-primary btn-full">
-                    {uploading ? <div className="spinner"></div> : "Save Document"}
-                 </button>
+      {tab === 'docs' && (
+        <>
+          <form onSubmit={e => handleUpload(e, 'doc')} className="bento-card" style={{marginBottom:'24px'}}>
+             <h3>Upload Document</h3>
+             <div style={{display:'grid', gap:'12px'}}>
+               <input name="name" placeholder="Name (e.g. V5C)" required />
+               <input type="date" name="expiry" />
+               <div className={`file-upload-box ${docFile ? 'has-file' : ''}`}>
+                 <span>{uploading ? "Uploading..." : (docFile ? `✅ ${docFile}` : "Select PDF / Image")}</span>
+                 <input type="file" name="file" required onChange={(e) => setDocFile(e.target.files[0]?.name)} />
                </div>
-            </form>
-            <div style={{display:'flex', flexDirection:'column', gap:'12px'}}>
-               {docs.length === 0 && <EmptyState text="No documents." />}
-               {docs.map(doc => (
-                 <div key={doc.id} className="list-item">
-                    <div style={{flex:1}}>
-                      <div style={{fontWeight:'600', color:'white'}}>{doc.name}</div>
-                      <div style={{fontSize:'0.85rem', color:'var(--text-muted)'}}>{doc.expiry ? `Exp: ${formatDate(doc.expiry)}` : 'No Expiry'}</div>
-                    </div>
-                    <div style={{display:'flex', gap:'10px'}}>
-                      <a href={doc.url} target="_blank" className="btn btn-secondary btn-sm">Open</a>
-                      <button onClick={() => deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, "documents", doc.id))} className="btn btn-danger btn-sm">×</button>
-                    </div>
-                 </div>
-               ))}
-            </div>
-          </>
-        )}
-      </div>
+               <button disabled={uploading} className="btn btn-primary btn-full">
+                  {uploading ? <div className="spinner"></div> : "Save Document"}
+               </button>
+             </div>
+          </form>
+          <div style={{display:'flex', flexDirection:'column', gap:'12px'}}>
+             {docs.length === 0 && <EmptyState text="No documents." />}
+             {docs.map(doc => (
+               <div key={doc.id} className="list-item">
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:'600', color:'white'}}>{doc.name}</div>
+                    <div style={{fontSize:'0.85rem', color:'var(--text-muted)'}}>{doc.expiry ? `Exp: ${formatDate(doc.expiry)}` : 'No Expiry'}</div>
+                  </div>
+                  <div style={{display:'flex', gap:'10px'}}>
+                    <a href={doc.url} target="_blank" className="btn btn-secondary btn-sm">Open</a>
+                    <button onClick={() => deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, "documents", doc.id))} className="btn btn-danger btn-sm">×</button>
+                  </div>
+               </div>
+             ))}
+          </div>
+        </>
+      )}
     </div>
-  );
+  </div>
+);
 }
 
 // --- UPDATED INSURANCE ROW (With Local UK Search) ---
