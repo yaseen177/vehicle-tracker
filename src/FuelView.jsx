@@ -52,8 +52,7 @@ const mapStyles = [
 ];
 
 export default function FuelView({ googleMapsApiKey, logoKey }) {
-  // --- STATE ---
-  const mapRef = useRef(null); // Reference to the map instance
+  const mapRef = useRef(null);
   const [searchCenter, setSearchCenter] = useState({ lat: 51.5074, lng: -0.1278 });
   const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -110,7 +109,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         const loc = results[0].geometry.location;
         const newPos = { lat: loc.lat(), lng: loc.lng() };
         setSearchCenter(newPos);
-        setRadius(5); // Default reset to 5m on search
+        setRadius(5); 
       } else {
         alert("Postcode not found!");
       }
@@ -119,15 +118,14 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
 
   // 4. SMART ZOOM: Fit Map to Radius
   useEffect(() => {
-    // Only run if map is loaded and we have a center
     if (mapRef.current && window.google) {
       const timeoutId = setTimeout(() => {
         const boundsCircle = new window.google.maps.Circle({
           center: searchCenter,
-          radius: (radius + 0.2) * 1609.34, // Radius + 0.2 mile padding (converted to meters)
+          radius: (radius + 0.2) * 1609.34, 
         });
         mapRef.current.fitBounds(boundsCircle.getBounds());
-      }, 100); // 100ms debounce to prevent jitter
+      }, 100); 
 
       return () => clearTimeout(timeoutId);
     }
@@ -170,18 +168,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       {/* Remove Default Close Button */}
       <style>{`
         .gm-ui-hover-effect { display: none !important; }
-        /* Custom Range Slider Styling to Fill Width */
-        input[type=range] {
-          -webkit-appearance: none; 
-          width: 100%; 
-          background: transparent;
-        }
-        input[type=range]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-        }
-        input[type=range]:focus {
-          outline: none;
-        }
       `}</style>
 
       {/* --- CONTROLS --- */}
@@ -223,7 +209,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
               >Diesel</button>
            </div>
 
-           {/* Radius Slider - Fixed Width */}
+           {/* Radius Slider - VISIBLE NOW */}
            <div style={{display:'flex', flexDirection:'column', flex:1, marginLeft:'10px'}}>
               <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.75rem', color:'#9ca3af', marginBottom:'4px'}}>
                 <span>Radius</span>
@@ -232,7 +218,15 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
               <input 
                 type="range" min="1" max="25" step="1" 
                 value={radius} onChange={(e) => setRadius(Number(e.target.value))}
-                style={{width:'100%', cursor:'pointer'}}
+                style={{
+                  width: '100%', 
+                  height: '6px', 
+                  background: '#4b5563', // Visible grey background
+                  borderRadius: '4px',
+                  outline: 'none',
+                  opacity: '0.9',
+                  cursor: 'pointer'
+                }}
               />
            </div>
         </div>
@@ -245,7 +239,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         <div style={{height:'45vh', minHeight:'250px', borderRadius:'12px', overflow:'hidden', border:'1px solid var(--border)', flexShrink:0}}>
           <GoogleMap
             mapContainerStyle={containerStyle}
-            // IMPORTANT: onLoad callback captures the map instance
             onLoad={map => mapRef.current = map}
             options={{
               styles: mapStyles,
@@ -260,7 +253,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                 key={i}
                 position={{ lat: station.location.latitude, lng: station.location.longitude }}
                 onClick={() => setSelectedStation(station)}
-                icon={`https://maps.google.com/mapfiles/ms/icons/${station.color === 'green' ? 'green' : station.color === 'orange' ? 'orange' : 'red'}-dot.png`}
+                icon={`https://googleusercontent.com/maps.google.com/mapfiles/ms/icons/${station.color === 'green' ? 'green' : station.color === 'orange' ? 'orange' : 'red'}-dot.png`}
               />
             ))}
 
@@ -308,10 +301,9 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                <div 
                  key={i} 
                  onClick={() => {
-                    // Click list = Move map but DONT change search radius
                     if (mapRef.current) {
                         mapRef.current.panTo({ lat: station.location.latitude, lng: station.location.longitude });
-                        mapRef.current.setZoom(15); // Zoom in on station
+                        mapRef.current.setZoom(15); 
                     }
                     setSelectedStation(station);
                  }}
