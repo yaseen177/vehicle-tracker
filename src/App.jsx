@@ -1121,15 +1121,19 @@ return (
     </div>
 
     {/* --- RIGHT COLUMN (TABS & HISTORY) (Unchanged) --- */}
-    <div style={{ display: 'flex', flexDirection: 'column' }}> 
+    <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        gap: '30px', // Forces a hard 30px gap between Chart and Tabs
+        marginTop: '0px'
+      }}> 
         
         {/* 1. MILEAGE CHART CONTAINER */}
-        {/* No overflow:hidden here, so labels won't be cut off. */}
+        {/* We give this EXTRA height (400px) so the X-Axis labels have plenty of room inside */}
         <div style={{ 
-          height: '350px',       // Tall enough for the graph + bottom text
+          minHeight: '400px',    // <--- INCREASED HEIGHT to fit labels
           width: '100%', 
           position: 'relative',
-          marginBottom: '20px',  // Pushes the tabs down
           zIndex: 1
         }}>
            <MileageAnalysis motTests={vehicle.motTests} />
@@ -1138,30 +1142,31 @@ return (
         {/* 2. TABS SELECTION */}
         <div className="tabs" style={{
            display: 'flex',
-           zIndex: 10,           // Ensures tabs are clickable
+           zIndex: 10,
            background: 'rgba(255, 255, 255, 0.08)', 
-           padding: '6px',        
+           padding: '8px',        
            borderRadius: '12px',  
-           gap: '5px'             
+           gap: '8px',
+           marginTop: '10px' // Extra safety margin
         }}>
           <button 
             onClick={() => setTab("logs")} 
             className={`tab-btn ${tab==='logs'?'active':''}`} 
-            style={{flex:1}} 
+            style={{flex:1, textAlign:'center', padding:'10px'}} 
           >
             Service
           </button>
           <button 
             onClick={() => setTab("mot")} 
             className={`tab-btn ${tab==='mot'?'active':''}`}
-            style={{flex:1}}
+            style={{flex:1, textAlign:'center', padding:'10px'}}
           >
             MOT
           </button>
           <button 
             onClick={() => setTab("docs")} 
             className={`tab-btn ${tab==='docs'?'active':''}`}
-            style={{flex:1}}
+            style={{flex:1, textAlign:'center', padding:'10px'}}
           >
             Docs
           </button>
@@ -1169,7 +1174,7 @@ return (
 
         {/* 3. TAB CONTENT - SERVICE LOGS */}
         {tab === 'logs' && (
-          <div style={{ marginTop: '20px' }}> 
+          <div style={{ marginTop: '0px' }}> 
             <form onSubmit={e => handleUpload(e, 'log')} className="bento-card" style={{marginBottom:'24px'}}>
               <h3>Add New Service Log</h3>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px'}}>
@@ -1208,14 +1213,14 @@ return (
 
         {/* 4. TAB CONTENT - MOT HISTORY */}
         {tab === 'mot' && (
-          <div className="fade-in" style={{ marginTop: '20px' }}>
+          <div className="fade-in" style={{ marginTop: '0px' }}>
              {!vehicle.motTests || vehicle.motTests.length === 0 ? <EmptyState text="No MOT history found." /> : vehicle.motTests.map((test, index) => <MotTestCard key={index} test={test} />)}
           </div>
         )}
 
         {/* 5. TAB CONTENT - DOCUMENTS */}
         {tab === 'docs' && (
-          <div style={{ marginTop: '20px' }}>
+          <div style={{ marginTop: '0px' }}>
             <form onSubmit={e => handleUpload(e, 'doc')} className="bento-card" style={{marginBottom:'24px'}}>
                <h3>Upload Document</h3>
                <div style={{display:'grid', gap:'12px'}}>
