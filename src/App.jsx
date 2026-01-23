@@ -984,13 +984,13 @@ return (
           display: 'flex', alignItems: 'center', justifyContent: 'center', 
           gap: '16px', marginBottom: '10px', flexWrap: 'wrap'
        }}>
-           {/* --- UPDATED: BIGGER LOGO CIRCLE --- */}
+           {/* --- UPDATED: LARGER WHITE CIRCLE, SAME LOGO SIZE --- */}
            <div style={{
-             width: '72px', height: '72px', // Increased from 52px
+             width: '90px', height: '90px', // Increased circle size
              background: 'white', borderRadius: '50%', 
              display: 'flex', alignItems: 'center', justifyContent: 'center',
              boxShadow: '0 4px 12px rgba(0,0,0,0.3)', 
-             padding: '8px' // Increased padding slightly
+             padding: '20px' // Increased padding keeps the logo image small
            }}>
               <img 
                 src={`https://img.logo.dev/${getBrandDomain(vehicle.make)}?token=${LOGO_DEV_PK}&size=128&format=png`} 
