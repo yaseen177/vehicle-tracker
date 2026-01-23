@@ -1121,26 +1121,36 @@ return (
     </div>
 
     {/* --- RIGHT COLUMN (TABS & HISTORY) (Unchanged) --- */}
-    <div>
+    <div style={{ position: 'relative' }}> {/* Ensure this column handles stacking */}
         
-        {/* 1. MILEAGE CHART (Isolated in its own box) */}
-        <div style={{ height: '250px', width: '100%', marginBottom: '20px' }}>
+        {/* 1. MILEAGE CHART */}
+        {/* Added zIndex: 1 and position: relative to keep it in its own layer */}
+        <div style={{ 
+          height: '300px', 
+          width: '100%', 
+          marginBottom: '50px', // INCREASED GAP to push tabs down
+          position: 'relative',
+          zIndex: 1 
+        }}>
            <MileageAnalysis motTests={vehicle.motTests} />
         </div> 
-        {/* ^--- THIS DIV MUST CLOSE HERE so it doesn't eat the tabs! */}
-
 
         {/* 2. TABS SELECTION */}
-        <div className="tabs" style={{marginTop:'20px'}}>
+        {/* Added zIndex: 10 to ensure these are ALWAYS clickable on top */}
+        <div className="tabs" style={{
+           position: 'relative', 
+           zIndex: 10, 
+           marginTop: '20px',
+           background: 'var(--background)' // Optional: ensures text doesn't blend if overlap happens
+        }}>
           <button onClick={() => setTab("logs")} className={`tab-btn ${tab==='logs'?'active':''}`}>Service History</button>
           <button onClick={() => setTab("mot")} className={`tab-btn ${tab==='mot'?'active':''}`}>MOT History</button>
           <button onClick={() => setTab("docs")} className={`tab-btn ${tab==='docs'?'active':''}`}>Documents</button>
         </div>
 
-
         {/* 3. TAB CONTENT - SERVICE LOGS */}
         {tab === 'logs' && (
-          <>
+          <div style={{ position: 'relative', zIndex: 10 }}> {/* Wrap content in zIndex too */}
             <form onSubmit={e => handleUpload(e, 'log')} className="bento-card" style={{marginBottom:'24px'}}>
               <h3>Add New Service Log</h3>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px'}}>
@@ -1174,21 +1184,19 @@ return (
                 </div>
               ))}
             </div>
-          </>
+          </div>
         )}
-
 
         {/* 4. TAB CONTENT - MOT HISTORY */}
         {tab === 'mot' && (
-          <div className="fade-in">
+          <div className="fade-in" style={{ position: 'relative', zIndex: 10 }}>
              {!vehicle.motTests || vehicle.motTests.length === 0 ? <EmptyState text="No MOT history found." /> : vehicle.motTests.map((test, index) => <MotTestCard key={index} test={test} />)}
           </div>
         )}
 
-
         {/* 5. TAB CONTENT - DOCUMENTS */}
         {tab === 'docs' && (
-          <>
+          <div style={{ position: 'relative', zIndex: 10 }}>
             <form onSubmit={e => handleUpload(e, 'doc')} className="bento-card" style={{marginBottom:'24px'}}>
                <h3>Upload Document</h3>
                <div style={{display:'grid', gap:'12px'}}>
@@ -1218,7 +1226,7 @@ return (
                  </div>
                ))}
             </div>
-          </>
+          </div>
         )}
       </div>
   </div>
