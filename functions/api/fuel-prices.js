@@ -16,45 +16,67 @@ export async function onRequest(context) {
       "https://www.tesco.com/fuel_prices/fuel_prices_data.json"
     ];
   
-    // 1. Check Cache (Renamed to v2 to force a refresh for you)
+    // 1. Check Cache (Updated to 'v4' to force a fresh try for Tesco)
     const cache = caches.default;
-    const cacheKey = new Request("https://fuel-prices-aggregated-v2"); 
+    const cacheKey = new Request("https://fuel-prices-aggregated-v4"); 
     let response = await cache.match(cacheKey);
   
     if (response) {
       return response;
     }
   
-    // 2. Fetch all sources in parallel with User-Agent Headers
+    // 2. Define Headers that mimic a real Chrome Browser
+    const fakeBrowserHeaders = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+      "Accept-Language": "en-GB,en;q=0.9",
+      "Accept-Encoding": "gzip, deflate, br",
+      "Connection": "keep-alive",
+      "Upgrade-Insecure-Requests": "1",
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "none",
+      "Sec-Fetch-User": "?1",
+      "Cache-Control": "max-age=0"
+    };
+  
+    // 3. Fetch all sources in parallel
     const requests = SOURCES.map(url => 
       fetch(url, {
-        headers: {
-          // This header tricks Tesco/Sainsbury's into thinking we are a real browser
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "application/json"
-        }
+        method: 'GET',
+        headers: fakeBrowserHeaders,
+        redirect: 'follow'
       })
-      .then(r => r.json())
+      .then(async r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .catch(err => {
-        // Quietly fail for individual sources so the whole app doesn't crash
-        console.warn(`Failed to fetch ${url}`, err);
-        return null;
+        // Log the error but don't break the app
+        console.warn(`Failed to fetch ${url}:`, err.message);
+        return null; 
       })
     );
     
     const results = await Promise.all(requests);
   
-    // 3. Merge Data
+    // 4. Merge Data
     let allStations = [];
     results.forEach(data => {
+      // Standard schema (Tesco, Asda, etc)
       if (data && data.stations) {
         allStations = [...allStations, ...data.stations];
       }
+      // Handle edge cases if schema differs slightly
+      else if (data && data.sites) {
+          allStations = [...allStations, ...data.sites];
+      }
     });
   
-    // 4. Create Response
+    // 5. Create Response
     const json = JSON.stringify({ 
       updated: new Date().toISOString(),
+      count: allStations.length, // Added for debugging
       stations: allStations 
     });
   
@@ -66,7 +88,7 @@ export async function onRequest(context) {
       }
     });
   
-    // 5. Save to Cache
+    // 6. Save to Cache
     context.waitUntil(cache.put(cacheKey, response.clone()));
   
     return response;
