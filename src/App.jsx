@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { auth, googleProvider, db, storage } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, GoogleAuthProvider } from "firebase/auth";
-import { doc, setDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, updateDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -205,7 +205,7 @@ function MainApp() {
         />
       )}
 
-      {view === 'profile' && <ProfileView user={user} showToast={showToast} />}
+      {view === 'profile' && <ProfileView user={user} showToast={showToast} onBack={() => setView("garage")} />}
     </div>
   );
 }
@@ -1273,27 +1273,39 @@ const EmptyState = ({ text }) => (
   </div>
 );
 
-function ProfileView({ user, showToast }) {
+function ProfileView({ user, showToast, onBack }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
 
-  // Load existing profile on mount
+  // 1. Load existing profile from Firestore when component mounts
   useEffect(() => {
     const loadProfile = async () => {
-      const docSnap = await getDoc(doc(db, "users", user.uid)); // Ensure getDoc is imported
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setName(data.displayName || "");
-        setPhone(data.phoneNumber || "");
+      try {
+        const docRef = doc(db, "users", user.uid);
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setName(data.displayName || "");
+          setPhone(data.phoneNumber || "");
+        }
+      } catch (error) {
+        console.error("Error loading profile:", error);
+      } finally {
+        setFetching(false);
       }
     };
     loadProfile();
   }, [user.uid]);
 
+  // 2. Save or Update Profile
   const handleSave = async () => {
-    // Basic UK Number Validation (Starts with +44 or 07)
+    // Basic formatting: Remove spaces from phone
     let cleanPhone = phone.replace(/\s+/g, '');
+    
+    // Auto-fix: If user types "07...", change to "+447..."
     if (cleanPhone.startsWith('07')) {
       cleanPhone = '+44' + cleanPhone.substring(1);
     }
@@ -1305,53 +1317,80 @@ function ProfileView({ user, showToast }) {
 
     setLoading(true);
     try {
+      // Merge: true ensures we don't overwrite other data (like vehicles)
       await setDoc(doc(db, "users", user.uid), {
         displayName: name,
         phoneNumber: cleanPhone,
         smsEnabled: true
       }, { merge: true });
 
-      // Send a test welcome SMS
+      // Optional: Send a confirmation text if the number changed
       await fetch('/api/send-sms', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
            to: cleanPhone,
-           body: `Hi ${name}, welcome to My Garage! SMS alerts are now active for your vehicle reminders.`
+           body: `Hi ${name}, your My Garage profile has been updated.`
         })
       });
 
-      showToast("Profile Saved & Test SMS Sent!");
+      showToast("Profile Updated Successfully!");
     } catch (e) {
+      console.error(e);
       showToast("Error saving profile", "error");
     }
     setLoading(false);
   };
 
+  if (fetching) return <div className="spinner" style={{margin:'50px auto'}}></div>;
+
   return (
-    <div className="fade-in" style={{maxWidth:'500px', margin:'40px auto'}}>
+    <div className="fade-in" style={{maxWidth:'500px', margin:'20px auto', padding:'0 15px'}}>
+       {/* BACK BUTTON */}
+       <button 
+         onClick={onBack} 
+         className="btn" 
+         style={{background:'transparent', border:'1px solid #333', marginBottom:'20px', display:'flex', alignItems:'center', gap:'8px', color:'#9ca3af'}}
+       >
+         ← Back to Garage
+       </button>
+
        <div className="bento-card">
-          <h2>Your Profile</h2>
-          <p style={{marginBottom:'20px'}}>Enable SMS reminders for MOT, Tax, and Insurance.</p>
+          <h2 style={{color:'white'}}>Your Profile</h2>
+          <p style={{marginBottom:'24px', color:'#9ca3af'}}>
+            Update your details below. We need your mobile number to send you MOT & Tax reminders.
+          </p>
           
-          <label style={{display:'block', marginBottom:'8px', fontSize:'0.9rem'}}>Full Name</label>
+          <label style={{display:'block', marginBottom:'8px', fontSize:'0.9rem', fontWeight:'bold', color:'var(--text-muted)'}}>
+            Full Name
+          </label>
           <input 
             value={name} 
             onChange={e => setName(e.target.value)} 
-            placeholder="Joe Bloggs" 
-            style={{width:'100%', padding:'12px', background:'#0f1115', border:'1px solid var(--border)', color:'white', borderRadius:'8px', marginBottom:'20px'}}
+            placeholder="e.g. Joe Bloggs" 
+            style={{
+              width:'100%', padding:'14px', background:'#0f1115', 
+              border:'1px solid var(--border)', color:'white', 
+              borderRadius:'8px', marginBottom:'20px', fontSize:'1rem'
+            }}
           />
 
-          <label style={{display:'block', marginBottom:'8px', fontSize:'0.9rem'}}>Mobile Number (UK Only)</label>
+          <label style={{display:'block', marginBottom:'8px', fontSize:'0.9rem', fontWeight:'bold', color:'var(--text-muted)'}}>
+            Mobile Number (UK)
+          </label>
           <input 
             value={phone} 
             onChange={e => setPhone(e.target.value)} 
             placeholder="+44 7123 456789" 
-            style={{width:'100%', padding:'12px', background:'#0f1115', border:'1px solid var(--border)', color:'white', borderRadius:'8px', marginBottom:'20px'}}
+            style={{
+              width:'100%', padding:'14px', background:'#0f1115', 
+              border:'1px solid var(--border)', color:'white', 
+              borderRadius:'8px', marginBottom:'24px', fontSize:'1rem'
+            }}
           />
 
-          <button onClick={handleSave} disabled={loading} className="btn btn-primary btn-full">
-            {loading ? "Saving..." : "Enable SMS Alerts"}
+          <button onClick={handleSave} disabled={loading} className="btn btn-primary btn-full" style={{padding:'14px', fontSize:'1.1rem'}}>
+            {loading ? "Saving..." : "Save Changes"}
           </button>
        </div>
     </div>
