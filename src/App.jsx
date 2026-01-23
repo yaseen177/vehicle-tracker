@@ -1121,29 +1121,24 @@ return (
     </div>
 
     {/* --- RIGHT COLUMN (TABS & HISTORY) (Unchanged) --- */}
-    <div style={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        gap: '20px' 
-      }}> 
+    <div style={{ display: 'flex', flexDirection: 'column' }}> 
         
-        {/* 1. MILEAGE CHART (Fixed Crop Issue) */}
+        {/* 1. MILEAGE CHART CONTAINER */}
+        {/* No overflow:hidden here, so labels won't be cut off. */}
         <div style={{ 
-          height: '340px',          // Increased height slightly
-          minHeight: '340px', 
+          height: '350px',       // Tall enough for the graph + bottom text
           width: '100%', 
-          overflow: 'hidden',       // Keeps the overlap protection
           position: 'relative',
-          zIndex: 1,
-          paddingBottom: '25px'     // <--- THIS FIXES THE CROP (Pulls chart up)
+          marginBottom: '20px',  // Pushes the tabs down
+          zIndex: 1
         }}>
            <MileageAnalysis motTests={vehicle.motTests} />
         </div> 
 
-        {/* 2. TABS SELECTION (Grey Background) */}
+        {/* 2. TABS SELECTION */}
         <div className="tabs" style={{
            display: 'flex',
-           zIndex: 10, 
+           zIndex: 10,           // Ensures tabs are clickable
            background: 'rgba(255, 255, 255, 0.08)', 
            padding: '6px',        
            borderRadius: '12px',  
@@ -1174,7 +1169,7 @@ return (
 
         {/* 3. TAB CONTENT - SERVICE LOGS */}
         {tab === 'logs' && (
-          <div style={{ position: 'relative', zIndex: 10 }}> 
+          <div style={{ marginTop: '20px' }}> 
             <form onSubmit={e => handleUpload(e, 'log')} className="bento-card" style={{marginBottom:'24px'}}>
               <h3>Add New Service Log</h3>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px'}}>
@@ -1213,14 +1208,14 @@ return (
 
         {/* 4. TAB CONTENT - MOT HISTORY */}
         {tab === 'mot' && (
-          <div className="fade-in" style={{ position: 'relative', zIndex: 10 }}>
+          <div className="fade-in" style={{ marginTop: '20px' }}>
              {!vehicle.motTests || vehicle.motTests.length === 0 ? <EmptyState text="No MOT history found." /> : vehicle.motTests.map((test, index) => <MotTestCard key={index} test={test} />)}
           </div>
         )}
 
         {/* 5. TAB CONTENT - DOCUMENTS */}
         {tab === 'docs' && (
-          <div style={{ position: 'relative', zIndex: 10 }}>
+          <div style={{ marginTop: '20px' }}>
             <form onSubmit={e => handleUpload(e, 'doc')} className="bento-card" style={{marginBottom:'24px'}}>
                <h3>Upload Document</h3>
                <div style={{display:'grid', gap:'12px'}}>
