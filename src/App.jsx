@@ -956,7 +956,7 @@ const sendUpdateSms = async (msg) => {
 
 return (
   <div className="dashboard-grid fade-in">
-    {/* --- SHARE MODAL --- */}
+    {/* --- SHARE MODAL (Unchanged) --- */}
     {shareQr && (
       <div className="modal-overlay" onClick={() => setShareQr(null)}>
          <div className="wizard-card" onClick={e => e.stopPropagation()} style={{textAlign:'center', maxWidth:'350px'}}>
@@ -984,14 +984,16 @@ return (
           display: 'flex', alignItems: 'center', justifyContent: 'center', 
           gap: '16px', marginBottom: '10px', flexWrap: 'wrap'
        }}>
-           {/* Logo Circle */}
+           {/* --- UPDATED: BIGGER LOGO CIRCLE --- */}
            <div style={{
-             width: '52px', height: '52px', background: 'white', borderRadius: '50%', 
+             width: '72px', height: '72px', // Increased from 52px
+             background: 'white', borderRadius: '50%', 
              display: 'flex', alignItems: 'center', justifyContent: 'center',
-             boxShadow: '0 4px 12px rgba(0,0,0,0.3)', padding: '6px'
+             boxShadow: '0 4px 12px rgba(0,0,0,0.3)', 
+             padding: '8px' // Increased padding slightly
            }}>
               <img 
-                src={`https://img.logo.dev/${getBrandDomain(vehicle.make)}?token=${LOGO_DEV_PK}&size=100&format=png`} 
+                src={`https://img.logo.dev/${getBrandDomain(vehicle.make)}?token=${LOGO_DEV_PK}&size=128&format=png`} 
                 onError={(e) => e.target.style.display='none'}
                 alt={vehicle.make}
                 style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}}
@@ -1007,7 +1009,7 @@ return (
        <h2 style={{textAlign:'center', marginBottom:'4px'}}>{vehicle.make}</h2>
        <p style={{textAlign:'center', color:'#9ca3af', marginTop:0}}>{vehicle.model}</p>
        
-       {/* SPECS GRID */}
+       {/* SPECS GRID (Unchanged) */}
        <div style={{marginTop:'20px', marginBottom:'20px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
            <div className="spec-box"><div className="spec-label">Year</div><div className="spec-val">{manufactureYear}</div></div>
            <div className="spec-box"><div className="spec-label">Engine</div><div className="spec-val">{vehicle.engineSize ? `${vehicle.engineSize}cc` : '-'}</div></div>
@@ -1015,7 +1017,7 @@ return (
            <div className="spec-box"><div className="spec-label">Colour</div><div className="spec-val">{vehicle.colour}</div></div>
        </div>
        
-       {/* DATES & EDITORS */}
+       {/* DATES & EDITORS (Unchanged) */}
        <div style={{borderTop: '1px solid var(--border)', paddingTop: '10px'}}>
          <EditableDateRow 
            label="MOT Expiry" 
@@ -1035,7 +1037,7 @@ return (
          />
        </div>
        
-       {/* ACTION BUTTONS */}
+       {/* ACTION BUTTONS (Unchanged) */}
        <div style={{marginTop:'30px', display:'flex', flexDirection:'column', gap:'10px'}}>
           <button onClick={refreshData} disabled={refreshing} className="btn btn-secondary btn-full">
              {refreshing ? "Refreshing..." : "🔄 Refresh Vehicle Data"}
@@ -1054,7 +1056,7 @@ return (
        </div>
     </div>
 
-    {/* --- RIGHT COLUMN (TABS & HISTORY) --- */}
+    {/* --- RIGHT COLUMN (TABS & HISTORY) (Unchanged) --- */}
     <div>
       <MileageAnalysis motTests={vehicle.motTests} />
 
