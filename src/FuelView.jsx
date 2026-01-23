@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
 
-const containerStyle = { width: '100%', height: '100%' };
-
+const containerStyle = { width: '100%', height: '80vh' };
 // --- HELPER: Haversine Distance (Miles) ---
 const getDistance = (lat1, lon1, lat2, lon2) => {
   const R = 3958.8; // Radius of Earth in miles
