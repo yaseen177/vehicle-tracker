@@ -17,12 +17,18 @@ export async function onRequest(context) {
 
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
-
+  const auth = getAuth(app);
   const logs = []; // We will print this to the screen so you can see what happened
 
   try {
-    // 2. Fetch all users
+    // 3. SIGN IN AS THE ROBOT BEFORE FETCHING DATA
+    logs.push("Attempting to sign in as Worker...");
+    await signInWithEmailAndPassword(auth, env.WORKER_EMAIL, env.WORKER_PASSWORD);
+    logs.push("Worker signed in successfully.");
+
+    // 4. NOW FETCH USERS (This will work now!)
     const usersSnap = await getDocs(collection(db, "users"));
+    logs.push(`Found ${usersSnap.size} users.`);
     
     for (const userDoc of usersSnap.docs) {
       const userData = userDoc.data();
@@ -44,13 +50,13 @@ export async function onRequest(context) {
     }
 
     return new Response(JSON.stringify({ status: "Run Complete", logs }, null, 2), {
-      headers: { "Content-Type": "application/json" }
-    });
-
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message, stack: err.stack }), { status: 500 });
+        headers: { "Content-Type": "application/json" }
+      });
+  
+    } catch (err) {
+      return new Response(JSON.stringify({ error: err.message, stack: err.stack }, null, 2), { status: 500 });
+    }
   }
-}
 
 // Helper Function
 async function checkDate(vehicle, user, type, dateStr, today, env, logs) {
