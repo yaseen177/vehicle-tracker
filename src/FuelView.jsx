@@ -53,8 +53,6 @@ const mapStyles = [
 
 export default function FuelView({ googleMapsApiKey, logoKey }) {
   // --- STATE ---
-  // searchCenter: Where the radius is calculated from (User or Postcode)
-  // viewCenter: Where the map camera is currently looking
   const [searchCenter, setSearchCenter] = useState({ lat: 51.5074, lng: -0.1278 });
   const [viewCenter, setViewCenter] = useState({ lat: 51.5074, lng: -0.1278 }); 
   
@@ -156,6 +154,13 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   return (
     <div className="fade-in" style={{height:'100%', display:'flex', flexDirection:'column', overflow:'hidden'}}>
       
+      {/* CSS Hack to Hide Default Google Close Button */}
+      <style>{`
+        .gm-ui-hover-effect {
+          display: none !important;
+        }
+      `}</style>
+
       {/* --- CONTROLS --- */}
       <div className="bento-card" style={{margin:'0 0 10px 0', padding:'12px', display:'flex', flexDirection:'column', gap:'12px'}}>
         
@@ -215,15 +220,15 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         <div style={{height:'45vh', minHeight:'250px', borderRadius:'12px', overflow:'hidden', border:'1px solid var(--border)', flexShrink:0}}>
           <GoogleMap
             mapContainerStyle={containerStyle}
-            center={viewCenter} // Uses viewCenter so map moves independently of search radius
+            center={viewCenter} 
             zoom={13}
             options={{
-              styles: mapStyles, // NEW STYLES (Roads visible)
+              styles: mapStyles,
               disableDefaultUI: true,
               clickableIcons: false
             }}
           >
-            {userLocation && <Marker position={userLocation} icon="http://maps.google.com/mapfiles/ms/icons/blue-dot.png" />}
+            {userLocation && <Marker position={userLocation} />}
             
             {nearbyStations.map((station, i) => (
               <Marker
@@ -233,8 +238,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                    setViewCenter({ lat: station.location.latitude, lng: station.location.longitude });
                    setSelectedStation(station);
                 }}
-                // Dynamically colored pins based on traffic light logic
-                icon={`http://googleusercontent.com/maps.google.com/mapfiles/ms/icons/${station.color === 'green' ? 'green' : station.color === 'orange' ? 'orange' : 'red'}-dot.png`}
+                // FIXED: Changed http -> https to ensure pins load
+                icon={`https://maps.google.com/mapfiles/ms/icons/${station.color === 'green' ? 'green' : station.color === 'orange' ? 'orange' : 'red'}-dot.png`}
               />
             ))}
 
@@ -282,7 +287,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                <div 
                  key={i} 
                  onClick={() => {
-                    // Move Map but DO NOT reset Search Radius
                     setViewCenter({ lat: station.location.latitude, lng: station.location.longitude });
                     setSelectedStation(station);
                  }}
@@ -316,7 +320,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                  </div>
 
                  <div style={{textAlign:'right'}}>
-                    {/* Highlight Selected Fuel */}
                     <div style={{fontSize:'1.1rem', fontWeight:'bold', color: station.color === 'green' ? '#4ade80' : 'white'}}>
                       {fuelType === 'E10' ? station.prices.E10 : station.prices.B7}p
                     </div>
