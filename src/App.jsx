@@ -161,8 +161,8 @@ function MainApp() {
   if (!user) return <LoginScreen onLogin={handleLogin} />;
 
   return (
-    <div className="app-wrapper fade-in">
-      {/* Wizard Modal */}
+    <div className="app-wrapper fade-in" style={{display:'flex', flexDirection:'column', minHeight:'100vh'}}>
+      {/* 1. WIZARD MODAL */}
       {showAddWizard && (
         <AddVehicleWizard 
           user={user} 
@@ -171,46 +171,61 @@ function MainApp() {
         />
       )}
 
-      {/* HEADER - CLEANER VERSION */}
+      {/* 2. HEADER */}
       <header className="top-nav">
         <div className="logo" onClick={view !== 'garage' ? () => {setView('garage'); window.history.back()} : null}>
            My Garage {view === 'dashboard' && activeVehicle && <span style={{opacity:0.5, fontWeight:400}}> / {activeVehicle.registration}</span>}
         </div>
         <div style={{display:'flex', gap:'12px'}}>
-           {/* BACK BUTTON (Only on Dashboard) */}
            {view === 'dashboard' && <button onClick={handleBack} className="btn btn-secondary">Back</button>}
-           
-           {/* PROFILE BUTTON (Now the only global action) */}
            <button onClick={() => setView("profile")} className="btn btn-secondary btn-sm" style={{fontSize:'1.2rem', padding:'4px 12px'}}>👤</button>
         </div>
       </header>
 
-      {/* VIEWS */}
-      {view === 'garage' && (
-        <GarageView 
-          vehicles={myVehicles} 
-          onOpen={openVehicle} 
-          onAddClick={() => setShowAddWizard(true)}
-        />
-      )}
+      {/* 3. MAIN CONTENT AREA (Flex Grow pushes footer down) */}
+      <div style={{flex: 1}}>
+        {view === 'garage' && (
+          <GarageView 
+            vehicles={myVehicles} 
+            onOpen={openVehicle} 
+            onAddClick={() => setShowAddWizard(true)}
+          />
+        )}
 
-      {view === 'dashboard' && activeVehicle && (
-        <DashboardView 
-          user={user} 
-          vehicle={activeVehicle} 
-          onDelete={() => deleteVehicle(activeVehicle.id)}
-          showToast={showToast}
-        />
-      )}
+        {view === 'dashboard' && activeVehicle && (
+          <DashboardView 
+            user={user} 
+            vehicle={activeVehicle} 
+            onDelete={() => deleteVehicle(activeVehicle.id)}
+            showToast={showToast}
+          />
+        )}
 
-      {view === 'profile' && (
-        <ProfileView 
-          user={user} 
-          showToast={showToast} 
-          onBack={() => setView("garage")}
-          onSignOut={() => signOut(auth)} // <-- PASS SIGN OUT HERE
-        />
-      )}
+        {view === 'profile' && (
+          <ProfileView 
+            user={user} 
+            showToast={showToast} 
+            onBack={() => setView("garage")}
+            onSignOut={() => signOut(auth)}
+          />
+        )}
+      </div>
+
+      {/* 4. NEW FOOTER */}
+      <footer style={{
+        textAlign: 'center', 
+        padding: '30px 20px', 
+        color: '#6b7280', 
+        fontSize: '0.85rem',
+        borderTop: '1px solid rgba(255,255,255,0.05)',
+        marginTop: 'auto'
+      }}>
+        <p style={{margin:0}}>Created by Yaseen Hussain</p>
+        <p style={{margin:'4px 0 0 0', opacity:0.6, fontSize:'0.75rem'}}>
+          &copy; {new Date().getFullYear()} All Rights Reserved.
+        </p>
+      </footer>
+
     </div>
   );
 }
