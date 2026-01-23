@@ -97,6 +97,25 @@ function MainApp() {
     if (u) loadGarage(u.uid);
   }), []);
 
+  // --- NEW: HANDLE BROWSER "BACK" & SWIPE GESTURES ---
+  useEffect(() => {
+    // When the user presses Back (or swipes on iPhone), this event fires
+    const handlePopState = (event) => {
+      // If we are currently looking at a dashboard, close it and go to garage
+      if (view === 'dashboard') {
+        setView("garage");
+        setActiveVehicleId(null);
+      } 
+      // If the modal is open, close it (optional nice-to-have)
+      else if (showAddWizard) {
+        setShowAddWizard(false);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [view, showAddWizard]); // Re-run when view changes
+
   const loadGarage = (uid) => {
     onSnapshot(collection(db, "users", uid, "vehicles"), (snap) => {
       setMyVehicles(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -114,9 +133,29 @@ function MainApp() {
   const deleteVehicle = async (vehicleId) => {
     if (window.confirm("Permanently delete this vehicle?")) {
       await deleteDoc(doc(db, "users", user.uid, "vehicles", vehicleId));
-      if (activeVehicleId === vehicleId) { setView("garage"); setActiveVehicleId(null); }
+      // Go back properly
+      if (activeVehicleId === vehicleId) { 
+         window.history.back(); 
+      }
       showToast("Vehicle deleted.");
     }
+  };
+
+  // --- UPDATED NAVIGATION HANDLER ---
+  const openVehicle = (id) => {
+    setActiveVehicleId(id);
+    setView("dashboard");
+    // This is the Magic Line: It adds a "fake" page to the browser history
+    // So when user swipes back, they don't leave the app.
+    window.history.pushState({ view: 'dashboard' }, '', '#dashboard');
+  };
+
+  // --- UPDATED BACK BUTTON HANDLER ---
+  const handleBack = () => {
+    // Instead of setting view manually, we tell browser to go back.
+    // This triggers the 'popstate' listener above, which handles the UI update.
+    // This keeps the history stack clean.
+    window.history.back();
   };
 
   if (!user) return <LoginScreen onLogin={handleLogin} />;
@@ -133,11 +172,12 @@ function MainApp() {
       )}
 
       <header className="top-nav">
-        <div className="logo" onClick={() => setView("garage")}>
+        <div className="logo" onClick={view === 'dashboard' ? handleBack : () => {}}>
            My Garage {view === 'dashboard' && activeVehicle && <span style={{opacity:0.5, fontWeight:400}}> / {activeVehicle.registration}</span>}
         </div>
         <div style={{display:'flex', gap:'12px'}}>
-          {view === 'dashboard' && <button onClick={() => setView("garage")} className="btn btn-secondary">Back</button>}
+          {/* UPDATED BACK BUTTON */}
+          {view === 'dashboard' && <button onClick={handleBack} className="btn btn-secondary">Back</button>}
           <button onClick={() => signOut(auth)} className="btn btn-secondary btn-sm">Sign Out</button>
         </div>
       </header>
@@ -145,7 +185,8 @@ function MainApp() {
       {view === 'garage' && (
         <GarageView 
           vehicles={myVehicles} 
-          onOpen={(id) => { setActiveVehicleId(id); setView("dashboard"); }} 
+          // UPDATED: Use the new openVehicle function
+          onOpen={openVehicle} 
           onAddClick={() => setShowAddWizard(true)}
         />
       )}
