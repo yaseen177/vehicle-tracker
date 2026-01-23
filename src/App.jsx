@@ -171,26 +171,24 @@ function MainApp() {
         />
       )}
 
+      {/* HEADER - CLEANER VERSION */}
       <header className="top-nav">
-        <div className="logo" onClick={view === 'dashboard' ? handleBack : () => {}}>
+        <div className="logo" onClick={view !== 'garage' ? () => {setView('garage'); window.history.back()} : null}>
            My Garage {view === 'dashboard' && activeVehicle && <span style={{opacity:0.5, fontWeight:400}}> / {activeVehicle.registration}</span>}
         </div>
         <div style={{display:'flex', gap:'12px'}}>
-          {/* NEW PROFILE BUTTON */}
-          <button onClick={() => setView("profile")} className="btn btn-secondary btn-sm" style={{fontSize:'1.2rem'}}>👤</button>
-          <button onClick={() => signOut(auth)} className="btn btn-secondary btn-sm">Sign Out</button>
-        </div>
-        <div style={{display:'flex', gap:'12px'}}>
-          {/* UPDATED BACK BUTTON */}
-          {view === 'dashboard' && <button onClick={handleBack} className="btn btn-secondary">Back</button>}
-          <button onClick={() => signOut(auth)} className="btn btn-secondary btn-sm">Sign Out</button>
+           {/* BACK BUTTON (Only on Dashboard) */}
+           {view === 'dashboard' && <button onClick={handleBack} className="btn btn-secondary">Back</button>}
+           
+           {/* PROFILE BUTTON (Now the only global action) */}
+           <button onClick={() => setView("profile")} className="btn btn-secondary btn-sm" style={{fontSize:'1.2rem', padding:'4px 12px'}}>👤</button>
         </div>
       </header>
 
+      {/* VIEWS */}
       {view === 'garage' && (
         <GarageView 
           vehicles={myVehicles} 
-          // UPDATED: Use the new openVehicle function
           onOpen={openVehicle} 
           onAddClick={() => setShowAddWizard(true)}
         />
@@ -205,7 +203,14 @@ function MainApp() {
         />
       )}
 
-      {view === 'profile' && <ProfileView user={user} showToast={showToast} onBack={() => setView("garage")} />}
+      {view === 'profile' && (
+        <ProfileView 
+          user={user} 
+          showToast={showToast} 
+          onBack={() => setView("garage")}
+          onSignOut={() => signOut(auth)} // <-- PASS SIGN OUT HERE
+        />
+      )}
     </div>
   );
 }
@@ -1391,6 +1396,15 @@ function ProfileView({ user, showToast, onBack }) {
 
           <button onClick={handleSave} disabled={loading} className="btn btn-primary btn-full" style={{padding:'14px', fontSize:'1.1rem'}}>
             {loading ? "Saving..." : "Save Changes"}
+          </button>
+
+          {/* NEW SIGN OUT BUTTON */}
+          <button 
+            onClick={onSignOut} 
+            className="btn btn-danger btn-full" 
+            style={{background:'rgba(220, 38, 38, 0.2)', color:'#f87171', border:'1px solid rgba(220, 38, 38, 0.5)'}}
+          >
+            Sign Out
           </button>
        </div>
     </div>
