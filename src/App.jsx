@@ -268,7 +268,7 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
 
-  const LOGO_DEV_PK = env.LOGO_DEV_PK;
+  const LOGO_DEV_PK = import.meta.env.VITE_LOGO_DEV_PK;
 
   // Top 6 for the Quick Grid
   const commonInsurers = [
@@ -621,7 +621,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
   const [shareQr, setShareQr] = useState(null);
   const [sharing, setSharing] = useState(false);
 
-  const LOGO_DEV_PK = env.LOGO_DEV_PK;
+  const LOGO_DEV_PK = import.meta.env.VITE_LOGO_DEV_PK;
 
   useEffect(() => {
     const unsubLogs = onSnapshot(query(collection(db, "users", user.uid, "vehicles", vehicle.id, "logs"), orderBy("date", "desc")), 
