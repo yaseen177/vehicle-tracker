@@ -1121,29 +1121,54 @@ return (
     </div>
 
     {/* --- RIGHT COLUMN (TABS & HISTORY) (Unchanged) --- */}
-    <div style={{ position: 'relative' }}> 
+    <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        gap: '20px' // This enforces space between Graph and Tabs
+      }}> 
         
-        {/* 1. MILEAGE CHART */}
+        {/* 1. MILEAGE CHART (Strictly Contained) */}
         <div style={{ 
           height: '300px', 
+          minHeight: '300px', // Force height on mobile
           width: '100%', 
-          marginBottom: '80px', // <--- INCREASED to 80px
+          overflow: 'hidden', // <--- CRITICAL: Cuts off any overlapping pixels
           position: 'relative',
           zIndex: 1 
         }}>
            <MileageAnalysis motTests={vehicle.motTests} />
         </div> 
 
-        {/* 2. TABS SELECTION */}
+        {/* 2. TABS SELECTION (New Grey Background) */}
         <div className="tabs" style={{
-           position: 'relative', 
+           display: 'flex',
            zIndex: 10, 
-           marginTop: '40px', // <--- INCREASED to 40px
-           background: 'var(--background)' 
+           background: 'rgba(255, 255, 255, 0.08)', // <--- GREY BACKGROUND
+           padding: '6px',        // Internal spacing
+           borderRadius: '12px',  // Rounded corners
+           gap: '5px'             // Space between buttons
         }}>
-          <button onClick={() => setTab("logs")} className={`tab-btn ${tab==='logs'?'active':''}`}>Service History</button>
-          <button onClick={() => setTab("mot")} className={`tab-btn ${tab==='mot'?'active':''}`}>MOT History</button>
-          <button onClick={() => setTab("docs")} className={`tab-btn ${tab==='docs'?'active':''}`}>Documents</button>
+          <button 
+            onClick={() => setTab("logs")} 
+            className={`tab-btn ${tab==='logs'?'active':''}`} 
+            style={{flex:1}} // Make buttons equal width
+          >
+            Service
+          </button>
+          <button 
+            onClick={() => setTab("mot")} 
+            className={`tab-btn ${tab==='mot'?'active':''}`}
+            style={{flex:1}}
+          >
+            MOT
+          </button>
+          <button 
+            onClick={() => setTab("docs")} 
+            className={`tab-btn ${tab==='docs'?'active':''}`}
+            style={{flex:1}}
+          >
+            Docs
+          </button>
         </div>
 
         {/* 3. TAB CONTENT - SERVICE LOGS */}
