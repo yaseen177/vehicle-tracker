@@ -1278,13 +1278,14 @@ const EmptyState = ({ text }) => (
   </div>
 );
 
-function ProfileView({ user, showToast, onBack }) {
+// Updated ProfileView - NOW INCLUDES 'onSignOut' in the top list
+function ProfileView({ user, showToast, onBack, onSignOut }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
 
-  // 1. Load existing profile from Firestore when component mounts
+  // 1. Load existing profile
   useEffect(() => {
     const loadProfile = async () => {
       try {
@@ -1305,12 +1306,10 @@ function ProfileView({ user, showToast, onBack }) {
     loadProfile();
   }, [user.uid]);
 
-  // 2. Save or Update Profile
+  // 2. Save Profile
   const handleSave = async () => {
-    // Basic formatting: Remove spaces from phone
+    // Basic formatting
     let cleanPhone = phone.replace(/\s+/g, '');
-    
-    // Auto-fix: If user types "07...", change to "+447..."
     if (cleanPhone.startsWith('07')) {
       cleanPhone = '+44' + cleanPhone.substring(1);
     }
@@ -1322,14 +1321,13 @@ function ProfileView({ user, showToast, onBack }) {
 
     setLoading(true);
     try {
-      // Merge: true ensures we don't overwrite other data (like vehicles)
       await setDoc(doc(db, "users", user.uid), {
         displayName: name,
         phoneNumber: cleanPhone,
         smsEnabled: true
       }, { merge: true });
 
-      // Optional: Send a confirmation text if the number changed
+      // Optional: Send confirmation
       await fetch('/api/send-sms', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1398,7 +1396,9 @@ function ProfileView({ user, showToast, onBack }) {
             {loading ? "Saving..." : "Save Changes"}
           </button>
 
-          {/* NEW SIGN OUT BUTTON */}
+          <hr style={{margin:'30px 0', borderColor:'var(--border)', opacity:0.3}} />
+
+          {/* SIGN OUT BUTTON */}
           <button 
             onClick={onSignOut} 
             className="btn btn-danger btn-full" 
@@ -1410,5 +1410,4 @@ function ProfileView({ user, showToast, onBack }) {
     </div>
   );
 }
-
 export default App;
