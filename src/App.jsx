@@ -423,30 +423,33 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
 };
 
 
-// --- NEW COMPONENT: MILEAGE GRAPH ---
+// --- UPDATED COMPONENT: PROPORTIONAL MILEAGE GRAPH ---
 const MileageAnalysis = ({ motTests }) => {
   // 1. Process Data
   const data = useMemo(() => {
     if (!motTests || motTests.length === 0) return [];
     
-    // Extract valid mileage, sort by date ascending (Oldest first)
+    // Extract valid mileage, sort by date ascending
     return motTests
       .filter(m => m.odometerValue && m.completedDate)
       .map(m => ({
-        date: new Date(m.completedDate),
-        dateStr: new Date(m.completedDate).toLocaleDateString('en-GB', { month:'short', year:'2-digit' }),
+        timestamp: new Date(m.completedDate).getTime(), // Numeric value for X-Axis
+        dateObj: new Date(m.completedDate),
         miles: parseInt(m.odometerValue),
       }))
-      .sort((a, b) => a.date - b.date);
+      .sort((a, b) => a.timestamp - b.timestamp);
   }, [motTests]);
 
-  if (data.length < 2) return null; // Need at least 2 points for a line
+  if (data.length < 2) return null; 
 
-  // 2. Calculate Average Annual Mileage
+  // 2. Calculate Stats
   const first = data[0];
   const last = data[data.length - 1];
-  const yearsDiff = (last.date - first.date) / (1000 * 60 * 60 * 24 * 365);
+  const yearsDiff = (last.dateObj - first.dateObj) / (1000 * 60 * 60 * 24 * 365);
   const avgMiles = yearsDiff > 0 ? Math.round((last.miles - first.miles) / yearsDiff) : 0;
+
+  // Formatter for Dates (e.g. "Jan 24")
+  const formatDate = (unixTime) => new Date(unixTime).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
 
   return (
     <div className="bento-card" style={{ marginTop: '20px', padding: '24px' }}>
@@ -464,13 +467,31 @@ const MileageAnalysis = ({ motTests }) => {
         <ResponsiveContainer>
           <LineChart data={data}>
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-            <XAxis dataKey="dateStr" stroke="#666" tick={{fontSize: 12}} />
-            <YAxis stroke="#666" tick={{fontSize: 12}} tickFormatter={(val) => `${(val/1000).toFixed(0)}k`} />
+            
+            {/* PROPORTIONAL TIME AXIS */}
+            <XAxis 
+              dataKey="timestamp" 
+              type="number" 
+              domain={['dataMin', 'dataMax']} 
+              tickFormatter={formatDate}
+              stroke="#666" 
+              tick={{fontSize: 12}} 
+            />
+            
+            <YAxis 
+              stroke="#666" 
+              tick={{fontSize: 12}} 
+              tickFormatter={(val) => `${(val/1000).toFixed(0)}k`} 
+              domain={['auto', 'auto']} // Auto scale Y axis
+            />
+            
             <Tooltip 
               contentStyle={{ backgroundColor: '#181b21', border: '1px solid #333', borderRadius:'8px' }}
-              labelStyle={{ color: '#fff' }}
+              labelStyle={{ color: '#fff', marginBottom: '5px' }}
+              labelFormatter={formatDate} // Show date instead of timestamp number
               formatter={(val) => [`${val.toLocaleString()} mi`, "Mileage"]}
             />
+            
             <Line 
               type="monotone" 
               dataKey="miles" 
