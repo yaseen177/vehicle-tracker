@@ -1122,95 +1122,105 @@ return (
 
     {/* --- RIGHT COLUMN (TABS & HISTORY) (Unchanged) --- */}
     <div>
-  {/* WRAP THE CHART IN A DIV WITH FIXED HEIGHT */}
-  <div style={{ height: '250px', width: '100%', marginBottom: '20px' }}>
-      <MileageAnalysis motTests={vehicle.motTests} />
-  </div>
+        
+        {/* 1. MILEAGE CHART (Isolated in its own box) */}
+        <div style={{ height: '250px', width: '100%', marginBottom: '20px' }}>
+           <MileageAnalysis motTests={vehicle.motTests} />
+        </div> 
+        {/* ^--- THIS DIV MUST CLOSE HERE so it doesn't eat the tabs! */}
 
-  <div className="tabs" style={{marginTop:'20px'}}>
-        <button onClick={() => setTab("logs")} className={`tab-btn ${tab==='logs'?'active':''}`}>Service History</button>
-        <button onClick={() => setTab("mot")} className={`tab-btn ${tab==='mot'?'active':''}`}>MOT History</button>
-        <button onClick={() => setTab("docs")} className={`tab-btn ${tab==='docs'?'active':''}`}>Documents</button>
-      </div>
 
-      {tab === 'logs' && (
-        <>
-          <form onSubmit={e => handleUpload(e, 'log')} className="bento-card" style={{marginBottom:'24px'}}>
-            <h3>Add New Service Log</h3>
-            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px'}}>
-              <input type="date" name="date" required />
-              <select name="type"><option>Service</option><option>Repair</option><option>Part</option><option>Other</option></select>
-            </div>
-            <input name="desc" placeholder="Description (e.g. Brake Pads)" required style={{marginBottom:'12px'}} />
-            <div style={{display:'grid', gridTemplateColumns:'100px 1fr', gap:'12px'}}>
-              <input type="number" step="0.01" name="cost" placeholder="£0.00" />
-              <div className={`file-upload-box ${logFile ? 'has-file' : ''}`}>
-                 <span>{uploading ? "Uploading..." : (logFile ? `✅ ${logFile}` : "Attach Receipt")}</span>
-                 <input type="file" name="file" onChange={(e) => setLogFile(e.target.files[0]?.name)} />
+        {/* 2. TABS SELECTION */}
+        <div className="tabs" style={{marginTop:'20px'}}>
+          <button onClick={() => setTab("logs")} className={`tab-btn ${tab==='logs'?'active':''}`}>Service History</button>
+          <button onClick={() => setTab("mot")} className={`tab-btn ${tab==='mot'?'active':''}`}>MOT History</button>
+          <button onClick={() => setTab("docs")} className={`tab-btn ${tab==='docs'?'active':''}`}>Documents</button>
+        </div>
+
+
+        {/* 3. TAB CONTENT - SERVICE LOGS */}
+        {tab === 'logs' && (
+          <>
+            <form onSubmit={e => handleUpload(e, 'log')} className="bento-card" style={{marginBottom:'24px'}}>
+              <h3>Add New Service Log</h3>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px'}}>
+                <input type="date" name="date" required />
+                <select name="type"><option>Service</option><option>Repair</option><option>Part</option><option>Other</option></select>
               </div>
-            </div>
-            <button disabled={uploading} className="btn btn-primary btn-full" style={{marginTop:'12px'}}>
-              {uploading ? <div className="spinner"></div> : "Save Entry"}
-            </button>
-          </form>
-          <div style={{display:'flex', flexDirection:'column', gap:'12px'}}>
-            {logs.length === 0 && <EmptyState text="No logs recorded." />}
-            {logs.map(log => (
-              <div key={log.id} className="list-item">
-                <div style={{minWidth:'100px', fontWeight:'600', color:'white'}}>{formatDate(log.date)}</div>
-                <div style={{minWidth:'80px'}}><span style={{background:'rgba(255,255,255,0.1)', padding:'4px 8px', borderRadius:'4px', fontSize:'0.8rem'}}>{log.type}</span></div>
-                <div style={{flex:1, color:'var(--text-muted)'}}>{log.desc}</div>
-                <div style={{minWidth:'80px', fontWeight:'700', color:'white'}}>£{log.cost}</div>
-                <div style={{display:'flex', gap:'10px'}}>
-                  {log.receipt && <a href={log.receipt} target="_blank" className="btn btn-secondary btn-sm" style={{padding:'6px 10px'}}>View</a>}
-                  <button onClick={() => deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, "logs", log.id))} className="btn btn-danger btn-sm" style={{padding:'6px 10px'}}>×</button>
+              <input name="desc" placeholder="Description (e.g. Brake Pads)" required style={{marginBottom:'12px'}} />
+              <div style={{display:'grid', gridTemplateColumns:'100px 1fr', gap:'12px'}}>
+                <input type="number" step="0.01" name="cost" placeholder="£0.00" />
+                <div className={`file-upload-box ${logFile ? 'has-file' : ''}`}>
+                   <span>{uploading ? "Uploading..." : (logFile ? `✅ ${logFile}` : "Attach Receipt")}</span>
+                   <input type="file" name="file" onChange={(e) => setLogFile(e.target.files[0]?.name)} />
                 </div>
               </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {tab === 'mot' && (
-        <div className="fade-in">
-           {!vehicle.motTests || vehicle.motTests.length === 0 ? <EmptyState text="No MOT history found." /> : vehicle.motTests.map((test, index) => <MotTestCard key={index} test={test} />)}
-        </div>
-      )}
-
-      {tab === 'docs' && (
-        <>
-          <form onSubmit={e => handleUpload(e, 'doc')} className="bento-card" style={{marginBottom:'24px'}}>
-             <h3>Upload Document</h3>
-             <div style={{display:'grid', gap:'12px'}}>
-               <input name="name" placeholder="Name (e.g. V5C)" required />
-               <input type="date" name="expiry" />
-               <div className={`file-upload-box ${docFile ? 'has-file' : ''}`}>
-                 <span>{uploading ? "Uploading..." : (docFile ? `✅ ${docFile}` : "Select PDF / Image")}</span>
-                 <input type="file" name="file" required onChange={(e) => setDocFile(e.target.files[0]?.name)} />
-               </div>
-               <button disabled={uploading} className="btn btn-primary btn-full">
-                  {uploading ? <div className="spinner"></div> : "Save Document"}
-               </button>
-             </div>
-          </form>
-          <div style={{display:'flex', flexDirection:'column', gap:'12px'}}>
-             {docs.length === 0 && <EmptyState text="No documents." />}
-             {docs.map(doc => (
-               <div key={doc.id} className="list-item">
-                  <div style={{flex:1}}>
-                    <div style={{fontWeight:'600', color:'white'}}>{doc.name}</div>
-                    <div style={{fontSize:'0.85rem', color:'var(--text-muted)'}}>{doc.expiry ? `Exp: ${formatDate(doc.expiry)}` : 'No Expiry'}</div>
-                  </div>
+              <button disabled={uploading} className="btn btn-primary btn-full" style={{marginTop:'12px'}}>
+                {uploading ? <div className="spinner"></div> : "Save Entry"}
+              </button>
+            </form>
+            <div style={{display:'flex', flexDirection:'column', gap:'12px'}}>
+              {logs.length === 0 && <EmptyState text="No logs recorded." />}
+              {logs.map(log => (
+                <div key={log.id} className="list-item">
+                  <div style={{minWidth:'100px', fontWeight:'600', color:'white'}}>{formatDate(log.date)}</div>
+                  <div style={{minWidth:'80px'}}><span style={{background:'rgba(255,255,255,0.1)', padding:'4px 8px', borderRadius:'4px', fontSize:'0.8rem'}}>{log.type}</span></div>
+                  <div style={{flex:1, color:'var(--text-muted)'}}>{log.desc}</div>
+                  <div style={{minWidth:'80px', fontWeight:'700', color:'white'}}>£{log.cost}</div>
                   <div style={{display:'flex', gap:'10px'}}>
-                    <a href={doc.url} target="_blank" className="btn btn-secondary btn-sm">Open</a>
-                    <button onClick={() => deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, "documents", doc.id))} className="btn btn-danger btn-sm">×</button>
+                    {log.receipt && <a href={log.receipt} target="_blank" className="btn btn-secondary btn-sm" style={{padding:'6px 10px'}}>View</a>}
+                    <button onClick={() => deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, "logs", log.id))} className="btn btn-danger btn-sm" style={{padding:'6px 10px'}}>×</button>
                   </div>
-               </div>
-             ))}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+
+        {/* 4. TAB CONTENT - MOT HISTORY */}
+        {tab === 'mot' && (
+          <div className="fade-in">
+             {!vehicle.motTests || vehicle.motTests.length === 0 ? <EmptyState text="No MOT history found." /> : vehicle.motTests.map((test, index) => <MotTestCard key={index} test={test} />)}
           </div>
-        </>
-      )}
-    </div>
+        )}
+
+
+        {/* 5. TAB CONTENT - DOCUMENTS */}
+        {tab === 'docs' && (
+          <>
+            <form onSubmit={e => handleUpload(e, 'doc')} className="bento-card" style={{marginBottom:'24px'}}>
+               <h3>Upload Document</h3>
+               <div style={{display:'grid', gap:'12px'}}>
+                 <input name="name" placeholder="Name (e.g. V5C)" required />
+                 <input type="date" name="expiry" />
+                 <div className={`file-upload-box ${docFile ? 'has-file' : ''}`}>
+                   <span>{uploading ? "Uploading..." : (docFile ? `✅ ${docFile}` : "Select PDF / Image")}</span>
+                   <input type="file" name="file" required onChange={(e) => setDocFile(e.target.files[0]?.name)} />
+                 </div>
+                 <button disabled={uploading} className="btn btn-primary btn-full">
+                    {uploading ? <div className="spinner"></div> : "Save Document"}
+                 </button>
+               </div>
+            </form>
+            <div style={{display:'flex', flexDirection:'column', gap:'12px'}}>
+               {docs.length === 0 && <EmptyState text="No documents." />}
+               {docs.map(doc => (
+                 <div key={doc.id} className="list-item">
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:'600', color:'white'}}>{doc.name}</div>
+                      <div style={{fontSize:'0.85rem', color:'var(--text-muted)'}}>{doc.expiry ? `Exp: ${formatDate(doc.expiry)}` : 'No Expiry'}</div>
+                    </div>
+                    <div style={{display:'flex', gap:'10px'}}>
+                      <a href={doc.url} target="_blank" className="btn btn-secondary btn-sm">Open</a>
+                      <button onClick={() => deleteDoc(doc(db, "users", user.uid, "vehicles", vehicle.id, "documents", doc.id))} className="btn btn-danger btn-sm">×</button>
+                    </div>
+                 </div>
+               ))}
+            </div>
+          </>
+        )}
+      </div>
   </div>
 );
 }
