@@ -84,6 +84,7 @@ function App() {
 }
 
 function MainApp() {
+  const LOGO_DEV_PK = import.meta.env.VITE_LOGO_DEV_PK;
   const [user, setUser] = useState(null);
   const [view, setView] = useState("garage");
   const [myVehicles, setMyVehicles] = useState([]);
