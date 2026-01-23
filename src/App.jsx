@@ -1124,34 +1124,35 @@ return (
     <div style={{ 
         display: 'flex', 
         flexDirection: 'column', 
-        gap: '20px' // This enforces space between Graph and Tabs
+        gap: '20px' 
       }}> 
         
-        {/* 1. MILEAGE CHART (Strictly Contained) */}
+        {/* 1. MILEAGE CHART (Fixed Crop Issue) */}
         <div style={{ 
-          height: '300px', 
-          minHeight: '300px', // Force height on mobile
+          height: '340px',          // Increased height slightly
+          minHeight: '340px', 
           width: '100%', 
-          overflow: 'hidden', // <--- CRITICAL: Cuts off any overlapping pixels
+          overflow: 'hidden',       // Keeps the overlap protection
           position: 'relative',
-          zIndex: 1 
+          zIndex: 1,
+          paddingBottom: '25px'     // <--- THIS FIXES THE CROP (Pulls chart up)
         }}>
            <MileageAnalysis motTests={vehicle.motTests} />
         </div> 
 
-        {/* 2. TABS SELECTION (New Grey Background) */}
+        {/* 2. TABS SELECTION (Grey Background) */}
         <div className="tabs" style={{
            display: 'flex',
            zIndex: 10, 
-           background: 'rgba(255, 255, 255, 0.08)', // <--- GREY BACKGROUND
-           padding: '6px',        // Internal spacing
-           borderRadius: '12px',  // Rounded corners
-           gap: '5px'             // Space between buttons
+           background: 'rgba(255, 255, 255, 0.08)', 
+           padding: '6px',        
+           borderRadius: '12px',  
+           gap: '5px'             
         }}>
           <button 
             onClick={() => setTab("logs")} 
             className={`tab-btn ${tab==='logs'?'active':''}`} 
-            style={{flex:1}} // Make buttons equal width
+            style={{flex:1}} 
           >
             Service
           </button>
