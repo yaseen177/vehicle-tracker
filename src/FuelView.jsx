@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
 
 const containerStyle = { width: '100%', height: '45vh', minHeight: '300px' };
@@ -29,7 +29,7 @@ const getBrandDomain = (brand) => {
   return overrides[b] || `${b}.com`;
 };
 
-// --- MAP STYLES (Light Grey with Visible Roads) ---
+// --- MAP STYLES ---
 const mapStyles = [
   { elementType: "geometry", stylers: [{ color: "#f5f5f5" }] },
   { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
@@ -53,9 +53,8 @@ const mapStyles = [
 
 export default function FuelView({ googleMapsApiKey, logoKey }) {
   // --- STATE ---
+  const mapRef = useRef(null); // Reference to the map instance
   const [searchCenter, setSearchCenter] = useState({ lat: 51.5074, lng: -0.1278 });
-  const [viewCenter, setViewCenter] = useState({ lat: 51.5074, lng: -0.1278 }); 
-  
   const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStation, setSelectedStation] = useState(null);
@@ -64,7 +63,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   // Filters
   const [radius, setRadius] = useState(3);
   const [postcodeQuery, setPostcodeQuery] = useState("");
-  const [fuelType, setFuelType] = useState('E10'); // 'E10' (Unleaded) or 'B7' (Diesel)
+  const [fuelType, setFuelType] = useState('E10'); 
 
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
@@ -94,8 +93,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const pos = { lat: position.coords.latitude, lng: position.coords.longitude };
-          setSearchCenter(pos); // Set radius origin
-          setViewCenter(pos);   // Move camera
+          setSearchCenter(pos);
           setUserLocation(pos);
         },
         () => console.warn("GPS Permission denied")
@@ -111,20 +109,35 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       if (status === 'OK' && results[0]) {
         const loc = results[0].geometry.location;
         const newPos = { lat: loc.lat(), lng: loc.lng() };
-        setSearchCenter(newPos); // Update radius origin
-        setViewCenter(newPos);   // Update camera
-        setRadius(5); 
+        setSearchCenter(newPos);
+        setRadius(5); // Default reset to 5m on search
       } else {
         alert("Postcode not found!");
       }
     });
   };
 
-  // 4. Smart Filter & Sort
+  // 4. SMART ZOOM: Fit Map to Radius
+  useEffect(() => {
+    // Only run if map is loaded and we have a center
+    if (mapRef.current && window.google) {
+      const timeoutId = setTimeout(() => {
+        const boundsCircle = new window.google.maps.Circle({
+          center: searchCenter,
+          radius: (radius + 0.2) * 1609.34, // Radius + 0.2 mile padding (converted to meters)
+        });
+        mapRef.current.fitBounds(boundsCircle.getBounds());
+      }, 100); // 100ms debounce to prevent jitter
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [searchCenter, radius, isLoaded]);
+
+  // 5. Smart Filter & Sort
   const nearbyStations = useMemo(() => {
     if (!stations.length) return [];
     
-    // Filter by Distance from SEARCH CENTER (not view center)
+    // Filter by Distance from SEARCH CENTER
     const local = stations.filter(s => {
       const dist = getDistance(searchCenter.lat, searchCenter.lng, s.location.latitude, s.location.longitude);
       s.distance = dist;
@@ -132,7 +145,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     });
 
     if (local.length > 0) {
-      // Calculate Average for Selected Fuel Type
+      // Calculate Average
       const avgPrice = local.reduce((acc, s) => acc + (s.prices[fuelType] || 0), 0) / local.length;
       
       const colored = local.map(s => {
@@ -143,7 +156,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         return { ...s, color };
       });
 
-      // Sort by Selected Fuel Price
+      // Sort
       return colored.sort((a, b) => (a.prices[fuelType] || 999) - (b.prices[fuelType] || 999));
     }
     return [];
@@ -154,10 +167,20 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   return (
     <div className="fade-in" style={{height:'100%', display:'flex', flexDirection:'column', overflow:'hidden'}}>
       
-      {/* CSS Hack to Hide Default Google Close Button */}
+      {/* Remove Default Close Button */}
       <style>{`
-        .gm-ui-hover-effect {
-          display: none !important;
+        .gm-ui-hover-effect { display: none !important; }
+        /* Custom Range Slider Styling to Fill Width */
+        input[type=range] {
+          -webkit-appearance: none; 
+          width: 100%; 
+          background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+        }
+        input[type=range]:focus {
+          outline: none;
         }
       `}</style>
 
@@ -200,15 +223,17 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
               >Diesel</button>
            </div>
 
-           {/* Radius Slider */}
-           <div style={{display:'flex', alignItems:'center', gap:'8px', flex:1, justifyContent:'flex-end'}}>
-              <span style={{fontSize:'0.8rem', color:'#9ca3af'}}>Radius:</span>
+           {/* Radius Slider - Fixed Width */}
+           <div style={{display:'flex', flexDirection:'column', flex:1, marginLeft:'10px'}}>
+              <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.75rem', color:'#9ca3af', marginBottom:'4px'}}>
+                <span>Radius</span>
+                <span style={{fontWeight:'bold', color:'white'}}>{radius} miles</span>
+              </div>
               <input 
-                type="range" min="1" max="20" step="1" 
+                type="range" min="1" max="25" step="1" 
                 value={radius} onChange={(e) => setRadius(Number(e.target.value))}
-                style={{maxWidth:'80px'}}
+                style={{width:'100%', cursor:'pointer'}}
               />
-              <span style={{fontSize:'0.8rem', fontWeight:'bold', minWidth:'25px'}}>{radius}m</span>
            </div>
         </div>
       </div>
@@ -220,8 +245,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         <div style={{height:'45vh', minHeight:'250px', borderRadius:'12px', overflow:'hidden', border:'1px solid var(--border)', flexShrink:0}}>
           <GoogleMap
             mapContainerStyle={containerStyle}
-            center={viewCenter} 
-            zoom={13}
+            // IMPORTANT: onLoad callback captures the map instance
+            onLoad={map => mapRef.current = map}
             options={{
               styles: mapStyles,
               disableDefaultUI: true,
@@ -234,11 +259,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
               <Marker
                 key={i}
                 position={{ lat: station.location.latitude, lng: station.location.longitude }}
-                onClick={() => {
-                   setViewCenter({ lat: station.location.latitude, lng: station.location.longitude });
-                   setSelectedStation(station);
-                }}
-                // FIXED: Changed http -> https to ensure pins load
+                onClick={() => setSelectedStation(station)}
                 icon={`https://maps.google.com/mapfiles/ms/icons/${station.color === 'green' ? 'green' : station.color === 'orange' ? 'orange' : 'red'}-dot.png`}
               />
             ))}
@@ -287,7 +308,11 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                <div 
                  key={i} 
                  onClick={() => {
-                    setViewCenter({ lat: station.location.latitude, lng: station.location.longitude });
+                    // Click list = Move map but DONT change search radius
+                    if (mapRef.current) {
+                        mapRef.current.panTo({ lat: station.location.latitude, lng: station.location.longitude });
+                        mapRef.current.setZoom(15); // Zoom in on station
+                    }
                     setSelectedStation(station);
                  }}
                  className="bento-card"
