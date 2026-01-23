@@ -1121,14 +1121,13 @@ return (
     </div>
 
     {/* --- RIGHT COLUMN (TABS & HISTORY) (Unchanged) --- */}
-    <div style={{ position: 'relative' }}> {/* Ensure this column handles stacking */}
+    <div style={{ position: 'relative' }}> 
         
         {/* 1. MILEAGE CHART */}
-        {/* Added zIndex: 1 and position: relative to keep it in its own layer */}
         <div style={{ 
           height: '300px', 
           width: '100%', 
-          marginBottom: '50px', // INCREASED GAP to push tabs down
+          marginBottom: '80px', // <--- INCREASED to 80px
           position: 'relative',
           zIndex: 1 
         }}>
@@ -1136,12 +1135,11 @@ return (
         </div> 
 
         {/* 2. TABS SELECTION */}
-        {/* Added zIndex: 10 to ensure these are ALWAYS clickable on top */}
         <div className="tabs" style={{
            position: 'relative', 
            zIndex: 10, 
-           marginTop: '20px',
-           background: 'var(--background)' // Optional: ensures text doesn't blend if overlap happens
+           marginTop: '40px', // <--- INCREASED to 40px
+           background: 'var(--background)' 
         }}>
           <button onClick={() => setTab("logs")} className={`tab-btn ${tab==='logs'?'active':''}`}>Service History</button>
           <button onClick={() => setTab("mot")} className={`tab-btn ${tab==='mot'?'active':''}`}>MOT History</button>
@@ -1150,7 +1148,7 @@ return (
 
         {/* 3. TAB CONTENT - SERVICE LOGS */}
         {tab === 'logs' && (
-          <div style={{ position: 'relative', zIndex: 10 }}> {/* Wrap content in zIndex too */}
+          <div style={{ position: 'relative', zIndex: 10 }}> 
             <form onSubmit={e => handleUpload(e, 'log')} className="bento-card" style={{marginBottom:'24px'}}>
               <h3>Add New Service Log</h3>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px'}}>
