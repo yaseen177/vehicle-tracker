@@ -1,11 +1,11 @@
 export async function onRequest(context) {
-    // List of all UK Government Scheme endpoints
     const SOURCES = [
       "https://fuelprices.asconagroup.co.uk/newfuel.json",
       "https://storelocator.asda.com/fuel_prices_data.json",
       "https://www.bp.com/en_gb/united-kingdom/home/fuelprices/fuel_prices_data.json",
       "https://fuelprices.esso.co.uk/latestdata.json",
       "https://jetlocal.co.uk/fuel_prices_data.json",
+      "https://devapi.krlpos.com/integration/live_price/krl",
       "https://www.morrisons.com/fuel-prices/fuel.json",
       "https://moto-way.com/fuel-price/fuel_prices.json",
       "https://fuel.motorfuelgroup.com/fuel_prices_data.json",
@@ -16,17 +16,32 @@ export async function onRequest(context) {
       "https://www.tesco.com/fuel_prices/fuel_prices_data.json"
     ];
   
-    // 1. Check Cache (We don't want to spam their servers)
+    // 1. Check Cache (Renamed to v2 to force a refresh for you)
     const cache = caches.default;
-    const cacheKey = new Request("https://fuel-prices-aggregated");
+    const cacheKey = new Request("https://fuel-prices-aggregated-v2"); 
     let response = await cache.match(cacheKey);
   
     if (response) {
       return response;
     }
   
-    // 2. Fetch all sources in parallel
-    const requests = SOURCES.map(url => fetch(url).then(r => r.json()).catch(() => null));
+    // 2. Fetch all sources in parallel with User-Agent Headers
+    const requests = SOURCES.map(url => 
+      fetch(url, {
+        headers: {
+          // This header tricks Tesco/Sainsbury's into thinking we are a real browser
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "application/json"
+        }
+      })
+      .then(r => r.json())
+      .catch(err => {
+        // Quietly fail for individual sources so the whole app doesn't crash
+        console.warn(`Failed to fetch ${url}`, err);
+        return null;
+      })
+    );
+    
     const results = await Promise.all(requests);
   
     // 3. Merge Data
@@ -46,7 +61,7 @@ export async function onRequest(context) {
     response = new Response(json, {
       headers: {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*", // Allow your app to read it
+        "Access-Control-Allow-Origin": "*", 
         "Cache-Control": "public, max-age=3600" // Cache for 1 hour
       }
     });
