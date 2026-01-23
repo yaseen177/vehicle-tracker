@@ -1,6 +1,7 @@
 export async function onRequest(context) {
-    // We wrap Tesco in a CORS proxy to bypass their Cloudflare IP block
-    const TESCO_URL = "https://corsproxy.io/?https://www.tesco.com/fuel_prices/fuel_prices_data.json";
+    // We use AllOrigins as the proxy for Tesco now
+    const TESCO_URL = "https://www.tesco.com/fuel_prices/fuel_prices_data.json";
+    const TESCO_PROXY = `https://api.allorigins.win/raw?url=${encodeURIComponent(TESCO_URL)}`;
     
     const SOURCES = [
       { name: "Ascona", url: "https://fuelprices.asconagroup.co.uk/newfuel.json" },
@@ -16,44 +17,48 @@ export async function onRequest(context) {
       { name: "Sainsburys", url: "https://api.sainsburys.co.uk/v1/exports/latest/fuel_prices_data.json" },
       { name: "SGN", url: "https://www.sgnretail.uk/files/data/SGN_daily_fuel_prices.json" },
       { name: "Shell", url: "https://www.shell.co.uk/fuel-prices-data.html" },
-      { name: "Tesco", url: TESCO_URL } // <--- Proxy Applied Here
+      { name: "Tesco", url: TESCO_PROXY } // <--- New Proxy Applied Here
     ];
   
-    // 1. Check Cache (Use 'v5' to ensure we don't load the old broken data)
+    // 1. Check Cache (Version 6 to clear previous attempts)
     const cache = caches.default;
-    const cacheKey = new Request("https://fuel-prices-aggregated-v5"); 
+    const cacheKey = new Request("https://fuel-prices-aggregated-v6"); 
     let response = await cache.match(cacheKey);
   
     if (response) {
       return response;
     }
   
-    // 2. Headers to mimic a real Chrome Browser (helps with Sainsbury's/Asda)
-    const fakeBrowserHeaders = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept": "application/json",
-      "Cache-Control": "no-cache"
+    // 2. Generic Headers (Keep it simple)
+    const headers = {
+      "User-Agent": "Mozilla/5.0 (Compatible; FuelTracker/1.0)",
+      "Accept": "application/json"
     };
   
     // 3. Fetch all sources
     const requests = SOURCES.map(async (source) => {
       try {
-        const response = await fetch(source.url, { 
-          headers: fakeBrowserHeaders,
-          redirect: 'follow'
-        });
+        const response = await fetch(source.url, { headers });
         
+        // If a specific source fails, skip it so the others still load
         if (!response.ok) return null;
   
         const data = await response.json();
         
-        // Handle different data structures
+        // Handle standard "stations" or alternative "sites" key
         if (data.stations) return data.stations;
         if (data.sites) return data.sites;
+        
+        // Handle AllOrigins wrapping (sometimes it wraps data in a 'contents' field)
+        if (data.contents) {
+            const inner = JSON.parse(data.contents);
+            return inner.stations || inner.sites || null;
+        }
+  
         return null;
   
       } catch (err) {
-        console.warn(`Failed to fetch ${source.name}`, err);
+        // console.warn(`Skipping ${source.name}: ${err.message}`);
         return null;
       }
     });
@@ -79,7 +84,7 @@ export async function onRequest(context) {
       headers: {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*", 
-        "Cache-Control": "public, max-age=3600" // Cache for 1 hour
+        "Cache-Control": "public, max-age=3600"
       }
     });
   
