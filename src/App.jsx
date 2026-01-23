@@ -695,6 +695,52 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
     showToast("Insurance Provider Updated");
   };
 
+  // --- NEW: HANDLE INSURANCE UPLOAD ---
+  const handleInsuranceUpload = async (file) => {
+    if (!file) return;
+    
+    // 1. Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      showToast("File too large (Max 5MB)", "error");
+      return;
+    }
+
+    try {
+      showToast("Uploading policy...");
+      
+      // 2. Upload to Firebase Storage
+      const storageRef = ref(storage, `users/${user.uid}/${vehicle.id}/insurance/${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
+
+      // 3. Update Firestore with the new file URL
+      await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), {
+        insurancePolicyFile: downloadURL,
+        insurancePolicyName: file.name
+      });
+
+      showToast("Policy document saved!");
+    } catch (error) {
+      console.error(error);
+      showToast("Upload failed", "error");
+    }
+  };
+
+  // --- NEW: DELETE INSURANCE DOC ---
+  const deleteInsuranceDoc = async () => {
+    if(!window.confirm("Remove this policy document?")) return;
+    
+    try {
+      await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), {
+        insurancePolicyFile: deleteField(),
+        insurancePolicyName: deleteField()
+      });
+      showToast("Document removed");
+    } catch (err) {
+      showToast("Error removing document", "error");
+    }
+  };
+
   const refreshData = async () => {
     setRefreshing(true);
     try {
@@ -1045,11 +1091,14 @@ return (
            onChange={(val) => updateDate('taxExpiry', val)} 
          />
          <ExpandableInsuranceRow 
-           vehicle={vehicle} 
-           logoKey={LOGO_DEV_PK}
-           onDateChange={(val) => updateDate('insuranceExpiry', val)}
-           onProviderChange={updateProvider}
-         />
+            vehicle={vehicle} 
+            logoKey={LOGO_DEV_PK}
+            onDateChange={(val) => updateDate('insuranceExpiry', val)}
+            onProviderChange={updateProvider}
+            // Make sure these two are added:
+            onUpload={handleInsuranceUpload} 
+            onDeleteDoc={deleteInsuranceDoc}
+          />
        </div>
        
        {/* ACTION BUTTONS (Unchanged) */}
@@ -1164,11 +1213,14 @@ return (
 }
 
 // --- UPDATED INSURANCE ROW (With Local UK Search) ---
-const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoKey }) => {
+const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoKey, onUpload, onDeleteDoc }) => {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filteredResults, setFilteredResults] = useState([]);
+  
+  // Ref for the hidden file input
+  const fileInputRef = useRef(null);
 
   // Filter Local UK List
   useEffect(() => {
@@ -1183,6 +1235,13 @@ const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoK
   }, [searchTerm]);
 
   const hasProvider = vehicle.insuranceProvider || vehicle.insuranceDomain;
+
+  // Handle file selection
+  const handleFileChange = (e) => {
+    if (e.target.files[0]) {
+      onUpload(e.target.files[0]);
+    }
+  };
 
   return (
     <>
@@ -1204,23 +1263,25 @@ const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoK
 
       {expanded && (
         <div className="insurance-details" style={{flexDirection:'column', alignItems:'stretch'}}>
+           
+           {/* 1. PROVIDER SECTION (Your existing code) */}
            {!editing && hasProvider && (
-             <div style={{display:'flex', alignItems:'center', gap:'16px'}}>
+             <div style={{display:'flex', alignItems:'center', gap:'16px', marginBottom:'20px'}}>
                 {vehicle.insuranceDomain ? (
                   <img src={`https://img.logo.dev/${vehicle.insuranceDomain}?token=${logoKey}&size=100&format=png`} alt="Logo" className="insurance-logo-large" />
                 ) : (
                   <div className="insurance-logo-large" style={{display:'flex', alignItems:'center', justifyContent:'center', color:'#000', fontWeight:'bold'}}>{vehicle.insuranceProvider.charAt(0)}</div>
                 )}
                 <div style={{flex:1}}>
-                   <h4 style={{color:'white'}}>{vehicle.insuranceProvider}</h4>
-                   <p style={{color:'#9ca3af', fontSize:'0.85rem'}}>Policy expires {formatDate(vehicle.insuranceExpiry)}</p>
+                   <h4 style={{color:'white', margin:0}}>{vehicle.insuranceProvider}</h4>
+                   <p style={{color:'#9ca3af', fontSize:'0.85rem', margin:0}}>Expires {formatDate(vehicle.insuranceExpiry)}</p>
                 </div>
                 <button onClick={() => setEditing(true)} style={{background:'none', border:'none', color:'var(--primary)', cursor:'pointer', fontSize:'0.85rem'}}>Edit</button>
              </div>
            )}
 
            {(!hasProvider || editing) && (
-             <div className="insurance-edit-box">
+             <div className="insurance-edit-box" style={{marginBottom:'20px'}}>
                 <div style={{display:'flex', justifyContent:'space-between', marginBottom:'10px'}}>
                    <span style={{fontSize:'0.9rem', fontWeight:'bold'}}>Select Insurer</span>
                    {hasProvider && <button onClick={() => setEditing(false)} style={{background:'none', border:'none', color:'#666'}}>Cancel</button>}
@@ -1250,6 +1311,48 @@ const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoK
                 )}
              </div>
            )}
+
+           {/* 2. NEW: POLICY DOCUMENT UPLOAD SECTION */}
+           <div style={{borderTop:'1px solid var(--border)', paddingTop:'16px'}}>
+              <label style={{fontSize:'0.85rem', color:'#9ca3af', marginBottom:'8px', display:'block'}}>Policy Document</label>
+              
+              {vehicle.insurancePolicyFile ? (
+                // STATE: File Exists
+                <div style={{display:'flex', alignItems:'center', gap:'10px', background:'rgba(255,255,255,0.05)', padding:'10px', borderRadius:'8px', border:'1px solid var(--border)'}}>
+                   <div style={{fontSize:'1.5rem'}}>📄</div>
+                   <div style={{flex:1, overflow:'hidden'}}>
+                     <div style={{fontSize:'0.9rem', color:'white', whiteSpace:'nowrap', textOverflow:'ellipsis', overflow:'hidden'}}>
+                       {vehicle.insurancePolicyName || "Policy.pdf"}
+                     </div>
+                     <a href={vehicle.insurancePolicyFile} target="_blank" rel="noreferrer" style={{fontSize:'0.8rem', color:'var(--primary)', textDecoration:'none'}}>View PDF</a>
+                   </div>
+                   <button onClick={onDeleteDoc} style={{background:'none', border:'none', cursor:'pointer', fontSize:'1.2rem', color:'#ef4444'}}>×</button>
+                </div>
+              ) : (
+                // STATE: No File (Upload Button)
+                <div 
+                  onClick={() => fileInputRef.current.click()}
+                  style={{
+                    border:'1px dashed var(--border)', borderRadius:'8px', padding:'12px', 
+                    textAlign:'center', cursor:'pointer', color:'#9ca3af', fontSize:'0.9rem',
+                    background: 'rgba(0,0,0,0.2)', transition: 'all 0.2s'
+                  }}
+                  onMouseOver={e => e.currentTarget.style.borderColor = 'var(--primary)'}
+                  onMouseOut={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                >
+                  <span style={{marginRight:'8px'}}>📤</span>
+                  Upload Policy PDF
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleFileChange} 
+                    style={{display:'none'}} 
+                    accept="application/pdf,image/*"
+                  />
+                </div>
+              )}
+           </div>
+
         </div>
       )}
     </>
