@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
 
-const containerStyle = { width: '100%', height: '80vh' };
+const containerStyle = { width: '100%', height: '100%' };
+
 // --- HELPER: Haversine Distance (Miles) ---
 const getDistance = (lat1, lon1, lat2, lon2) => {
   const R = 3958.8; // Radius of Earth in miles
@@ -14,14 +15,33 @@ const getDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-export default function FuelView({ googleMapsApiKey }) {
-  // State
+// --- HELPER: Guess Domain for Logo ---
+const getBrandDomain = (brand) => {
+  if (!brand) return 'fuel.com';
+  const b = brand.toLowerCase().replace(/['\s]/g, '');
+  const overrides = {
+    'shell': 'shell.com', 'bp': 'bp.com', 'esso': 'esso.co.uk',
+    'texaco': 'texaco.com', 'sainsburys': 'sainsburys.co.uk',
+    'tesco': 'tesco.com', 'asda': 'asda.com', 'morrisons': 'morrisons.com',
+    'jet': 'jetlocal.co.uk', 'applegreen': 'applegreenstores.com',
+    'gulf': 'gulfretail.co.uk'
+  };
+  return overrides[b] || `${b}.com`;
+};
+
+export default function FuelView({ googleMapsApiKey, logoKey }) {
+  // --- STATE ---
   const [center, setCenter] = useState({ lat: 51.5074, lng: -0.1278 }); // Default London
   const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStation, setSelectedStation] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   
+  // Filters
+  const [radius, setRadius] = useState(3); // Default 3 miles
+  const [postcodeQuery, setPostcodeQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+
   // Load Maps API
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
@@ -32,9 +52,9 @@ export default function FuelView({ googleMapsApiKey }) {
   useEffect(() => {
     async function fetchData() {
       try {
-        const res = await fetch('/api/fuel-prices'); // Calls your new Worker
+        const res = await fetch('/api/fuel-prices'); 
         const data = await res.json();
-        setStations(data.stations);
+        setStations(data.stations || []);
         setLoading(false);
       } catch (err) {
         console.error("Failed to load fuel data", err);
@@ -45,7 +65,7 @@ export default function FuelView({ googleMapsApiKey }) {
     getUserLocation();
   }, []);
 
-  // 2. Get User Location
+  // 2. Get User Location (GPS)
   const getUserLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -54,101 +74,200 @@ export default function FuelView({ googleMapsApiKey }) {
           setCenter(pos);
           setUserLocation(pos);
         },
-        () => alert("Could not get location. Ensure GPS is on.")
+        () => console.warn("GPS Permission denied")
       );
     }
   };
 
-  // 3. Filter & Sort Stations (3 Mile Radius)
+  // 3. Handle Postcode Search (Geocoding)
+  const handleSearch = () => {
+    if (!postcodeQuery || !window.google) return;
+    setSearching(true);
+    
+    const geocoder = new window.google.maps.Geocoder();
+    geocoder.geocode({ 'address': postcodeQuery + ", UK" }, (results, status) => {
+      setSearching(false);
+      if (status === 'OK' && results[0]) {
+        const loc = results[0].geometry.location;
+        setCenter({ lat: loc.lat(), lng: loc.lng() });
+        setRadius(5); // Auto-expand radius slightly for manual searches
+      } else {
+        alert("Postcode not found!");
+      }
+    });
+  };
+
+  // 4. Filter, Sort & Color Logic
   const nearbyStations = useMemo(() => {
     if (!stations.length) return [];
     
-    // Filter by distance
+    // A. Filter by Distance
     const local = stations.filter(s => {
       const dist = getDistance(center.lat, center.lng, s.location.latitude, s.location.longitude);
-      return dist <= 3.5; // Slightly over 3 miles to be safe
+      s.distance = dist; // Attach distance for display
+      return dist <= radius;
     });
 
-    // Calculate Average Price for Traffic Light Logic
+    // B. Calculate Avg Price for Traffic Lights
     if (local.length > 0) {
       const avgPrice = local.reduce((acc, s) => acc + s.prices.E10, 0) / local.length;
       
-      return local.map(s => {
+      const colored = local.map(s => {
         const price = s.prices.E10;
         let color = "red";
-        if (price < avgPrice - 1) color = "green"; // Cheap
+        if (price < avgPrice - 1) color = "green";      // Cheap
         else if (price < avgPrice + 1) color = "orange"; // Average
-        
         return { ...s, color };
       });
+
+      // C. Sort by Price (Cheapest First)
+      return colored.sort((a, b) => a.prices.E10 - b.prices.E10);
     }
     return [];
-  }, [stations, center]);
+  }, [stations, center, radius]);
 
-
-  if (!isLoaded) return <div className="spinner"></div>;
+  if (!isLoaded) return <div className="spinner">Loading Maps...</div>;
 
   return (
-    <div className="fade-in" style={{height:'100%', display:'flex', flexDirection:'column'}}>
+    <div className="fade-in" style={{height:'100%', display:'flex', flexDirection:'column', overflow:'hidden'}}>
       
-      {/* HEADER CONTROLS */}
-      <div className="bento-card" style={{marginBottom:'10px', padding:'12px', display:'flex', gap:'10px', alignItems:'center'}}>
-        <div style={{flex:1}}>
-           <h3 style={{margin:0}}>Fuel Finder</h3>
-           <p style={{margin:0, fontSize:'0.8rem', color:'#9ca3af'}}>
-             Found {nearbyStations.length} stations near you
-           </p>
+      {/* --- CONTROLS HEADER --- */}
+      <div className="bento-card" style={{margin:'0 0 10px 0', padding:'12px', display:'flex', flexDirection:'column', gap:'12px'}}>
+        
+        {/* Search Bar Row */}
+        <div style={{display:'flex', gap:'8px'}}>
+          <input 
+            placeholder="Enter Postcode..." 
+            value={postcodeQuery}
+            onChange={(e) => setPostcodeQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            style={{flex:1, padding:'8px 12px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white'}}
+          />
+          <button onClick={handleSearch} disabled={searching} className="btn btn-primary">
+            {searching ? '...' : '🔍'}
+          </button>
+          <button onClick={getUserLocation} className="btn btn-secondary">📍</button>
         </div>
-        <button onClick={getUserLocation} className="btn btn-primary btn-sm">📍 My Location</button>
+
+        {/* Radius Slider Row */}
+        <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+           <span style={{fontSize:'0.85rem', color:'#9ca3af', minWidth:'60px'}}>Radius:</span>
+           <input 
+             type="range" min="1" max="25" step="1" 
+             value={radius} onChange={(e) => setRadius(Number(e.target.value))}
+             style={{flex:1}}
+           />
+           <span style={{fontSize:'0.9rem', fontWeight:'bold', minWidth:'40px', textAlign:'right'}}>{radius}m</span>
+        </div>
       </div>
 
-      {/* MAP CONTAINER */}
-      <div style={{flex:1, borderRadius:'12px', overflow:'hidden', border:'1px solid var(--border)'}}>
-        <GoogleMap
-          mapContainerStyle={containerStyle}
-          center={center}
-          zoom={13}
-          options={{
-            styles: [ // Dark Mode Map Style
-              { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
-              { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
-              { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
-            ],
-            disableDefaultUI: true,
-          }}
-        >
-          {/* USER MARKER */}
-          {userLocation && (
-            <Marker position={userLocation} icon="http://maps.google.com/mapfiles/ms/icons/blue-dot.png" />
-          )}
+      {/* --- SPLIT VIEW (Map Top / List Bottom) --- */}
+      <div style={{flex:1, display:'flex', flexDirection:'column', gap:'10px', minHeight:0}}>
+        
+        {/* TOP: MAP (Fixed Height) */}
+        <div style={{height:'40vh', minHeight:'250px', borderRadius:'12px', overflow:'hidden', border:'1px solid var(--border)', flexShrink:0}}>
+          <GoogleMap
+            mapContainerStyle={containerStyle}
+            center={center}
+            zoom={12} // Slightly zoomed out to see radius
+            options={{
+              styles: [
+                { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+                { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+                { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+              ],
+              disableDefaultUI: true,
+            }}
+          >
+            {userLocation && <Marker position={userLocation} icon="http://maps.google.com/mapfiles/ms/icons/blue-dot.png" />}
+            
+            {nearbyStations.map((station, i) => (
+              <Marker
+                key={i}
+                position={{ lat: station.location.latitude, lng: station.location.longitude }}
+                onClick={() => setSelectedStation(station)}
+                icon={`http://maps.google.com/mapfiles/ms/icons/$${station.color}-dot.png`}
+              />
+            ))}
 
-          {/* STATION MARKERS */}
-          {nearbyStations.map((station, i) => (
-            <Marker
-              key={i}
-              position={{ lat: station.location.latitude, lng: station.location.longitude }}
-              onClick={() => setSelectedStation(station)}
-              icon={`http://maps.google.com/mapfiles/ms/icons/${station.color}-dot.png`}
-            />
-          ))}
-
-          {/* INFO WINDOW */}
-          {selectedStation && (
-            <InfoWindow
-              position={{ lat: selectedStation.location.latitude, lng: selectedStation.location.longitude }}
-              onCloseClick={() => setSelectedStation(null)}
-            >
-              <div style={{color:'black', padding:'4px'}}>
-                <h4 style={{margin:'0 0 5px 0'}}>{selectedStation.brand}</h4>
-                <div style={{fontSize:'1.1rem', fontWeight:'bold', color: selectedStation.color==='green' ? '#16a34a' : 'black'}}>
-                   Unleaded: {selectedStation.prices.E10}p
+            {selectedStation && (
+              <InfoWindow
+                position={{ lat: selectedStation.location.latitude, lng: selectedStation.location.longitude }}
+                onCloseClick={() => setSelectedStation(null)}
+              >
+                <div style={{color:'black', padding:'4px'}}>
+                  <strong style={{fontSize:'1rem'}}>{selectedStation.brand}</strong>
+                  <div style={{marginTop:'4px', color: selectedStation.color==='green'?'#16a34a':'black'}}>
+                    {selectedStation.prices.E10}p
+                  </div>
                 </div>
-                <div style={{fontSize:'0.9rem'}}>Diesel: {selectedStation.prices.B7}p</div>
-                <div style={{fontSize:'0.8rem', color:'#666', marginTop:'4px'}}>{selectedStation.address}</div>
-              </div>
-            </InfoWindow>
-          )}
-        </GoogleMap>
+              </InfoWindow>
+            )}
+          </GoogleMap>
+        </div>
+
+        {/* BOTTOM: SCROLLABLE LIST */}
+        <div style={{flex:1, overflowY:'auto', paddingBottom:'20px'}}>
+           <div style={{fontSize:'0.85rem', color:'#9ca3af', marginBottom:'8px', paddingLeft:'4px'}}>
+              Cheapest stations near center ({nearbyStations.length} found)
+           </div>
+
+           {nearbyStations.length === 0 && !loading && (
+             <div style={{textAlign:'center', padding:'40px', color:'#666'}}>
+               No stations found within {radius} miles. Try increasing the radius.
+             </div>
+           )}
+
+           <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
+             {nearbyStations.map((station, i) => (
+               <div 
+                 key={i} 
+                 onClick={() => {
+                    setCenter({ lat: station.location.latitude, lng: station.location.longitude });
+                    setSelectedStation(station);
+                 }}
+                 className="bento-card"
+                 style={{
+                   padding:'12px', 
+                   display:'flex', 
+                   alignItems:'center', 
+                   gap:'12px',
+                   cursor:'pointer',
+                   borderLeft: `4px solid ${station.color === 'green' ? '#22c55e' : station.color === 'orange' ? '#f59e0b' : '#ef4444'}`
+                 }}
+               >
+                 {/* LOGO */}
+                 <div style={{width:'40px', height:'40px', background:'white', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', padding:'4px', flexShrink:0}}>
+                    <img 
+                      src={`https://img.logo.dev/${getBrandDomain(station.brand)}?token=${logoKey}&size=60&format=png`} 
+                      style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}}
+                      onError={e => e.target.style.display='none'}
+                      alt={station.brand}
+                    />
+                 </div>
+
+                 {/* DETAILS */}
+                 <div style={{flex:1, minWidth:0}}>
+                    <div style={{fontWeight:'bold', fontSize:'0.95rem', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
+                      {station.brand} <span style={{fontSize:'0.75rem', fontWeight:400, color:'#9ca3af'}}>({station.distance.toFixed(1)}m)</span>
+                    </div>
+                    <div style={{fontSize:'0.75rem', color:'#9ca3af', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
+                      {station.address}
+                    </div>
+                 </div>
+
+                 {/* PRICES */}
+                 <div style={{textAlign:'right'}}>
+                    <div style={{fontSize:'1.1rem', fontWeight:'bold', color: station.color === 'green' ? '#4ade80' : 'white'}}>
+                      {station.prices.E10}p
+                    </div>
+                    <div style={{fontSize:'0.75rem', color:'#9ca3af'}}>Diesel: {station.prices.B7}p</div>
+                 </div>
+               </div>
+             ))}
+           </div>
+        </div>
+
       </div>
     </div>
   );

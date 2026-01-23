@@ -215,7 +215,10 @@ function MainApp() {
 
         {/* --- ADD THIS SECTION HERE --- */}
         {view === 'fuel' && (
-          <FuelView googleMapsApiKey={import.meta.env.VITE_GOOGLE_MAPS_KEY} />
+          <FuelView 
+            googleMapsApiKey={import.meta.env.VITE_GOOGLE_MAPS_KEY} 
+            logoKey={LOGO_DEV_PK} // <--- ADD THIS
+          />
         )}
 
       </div>
