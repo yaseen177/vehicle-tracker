@@ -668,16 +668,30 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
+      // Extract new dates
+      const newMotExpiry = data.motTests && data.motTests.length > 0 ? data.motTests[0].expiryDate : "";
+      const newTaxExpiry = data.taxDueDate || "";
+
       const updates = {
         make: data.make, model: data.model, colour: data.primaryColour,
         engineSize: data.engineSize, fuelType: data.fuelType,
         manufactureDate: data.manufactureDate, firstUsedDate: data.firstUsedDate,
-        taxExpiry: data.taxDueDate || "", motTests: data.motTests || [],
-        motExpiry: data.motTests ? data.motTests[0].expiryDate : "",
+        taxExpiry: newTaxExpiry, 
+        motTests: data.motTests || [],
+        motExpiry: newMotExpiry,
         lastRefreshed: new Date().toISOString()
       };
+      
       await updateDoc(doc(db, "users", user.uid, "vehicles", vehicle.id), updates);
-      sendUpdateSms(`Vehicle data for ${vehicle.registration} has been refreshed from DVLA/DVSA.`);
+      
+      // --- NEW SMS LOGIC ---
+      // Format dates to UK format (DD/MM/YYYY) for the text message
+      const fmtMot = newMotExpiry ? new Date(newMotExpiry).toLocaleDateString('en-GB') : "N/A";
+      const fmtTax = newTaxExpiry ? new Date(newTaxExpiry).toLocaleDateString('en-GB') : "N/A";
+      
+      sendUpdateSms(`Vehicle data refreshed for ${vehicle.registration}. MOT due: ${fmtMot}. Tax due: ${fmtTax}.`);
+      // ---------------------
+
       showToast("Vehicle data refreshed!");
     } catch (err) { showToast("Refresh failed: " + err.message, "error"); }
     setRefreshing(false);
