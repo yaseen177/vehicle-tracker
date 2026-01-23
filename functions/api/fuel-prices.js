@@ -1,5 +1,6 @@
 export async function onRequest(context) {
     // We use AllOrigins as the proxy for Tesco now
+    // This routes the request through a different IP address
     const TESCO_URL = "https://www.tesco.com/fuel_prices/fuel_prices_data.json";
     const TESCO_PROXY = `https://api.allorigins.win/raw?url=${encodeURIComponent(TESCO_URL)}`;
     
@@ -20,16 +21,16 @@ export async function onRequest(context) {
       { name: "Tesco", url: TESCO_PROXY } // <--- New Proxy Applied Here
     ];
   
-    // 1. Check Cache (Version 6 to clear previous attempts)
+    // 1. Check Cache (Version 7 to clear previous failed attempts)
     const cache = caches.default;
-    const cacheKey = new Request("https://fuel-prices-aggregated-v6"); 
+    const cacheKey = new Request("https://fuel-prices-aggregated-v7"); 
     let response = await cache.match(cacheKey);
   
     if (response) {
       return response;
     }
   
-    // 2. Generic Headers (Keep it simple)
+    // 2. Generic Headers
     const headers = {
       "User-Agent": "Mozilla/5.0 (Compatible; FuelTracker/1.0)",
       "Accept": "application/json"
@@ -38,27 +39,37 @@ export async function onRequest(context) {
     // 3. Fetch all sources
     const requests = SOURCES.map(async (source) => {
       try {
-        const response = await fetch(source.url, { headers });
+        // Add a timeout so slow proxies don't freeze the app
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 second timeout
+  
+        const response = await fetch(source.url, { 
+          headers, 
+          signal: controller.signal 
+        });
+        clearTimeout(timeoutId);
         
-        // If a specific source fails, skip it so the others still load
         if (!response.ok) return null;
   
         const data = await response.json();
         
-        // Handle standard "stations" or alternative "sites" key
+        // Handle standard "stations" key
         if (data.stations) return data.stations;
+        // Handle "sites" key (some providers use this)
         if (data.sites) return data.sites;
         
-        // Handle AllOrigins wrapping (sometimes it wraps data in a 'contents' field)
+        // Handle AllOrigins wrapping (sometimes it returns JSON inside JSON)
         if (data.contents) {
-            const inner = JSON.parse(data.contents);
-            return inner.stations || inner.sites || null;
+            try {
+              const inner = JSON.parse(data.contents);
+              return inner.stations || inner.sites || null;
+            } catch(e) { return null; }
         }
   
         return null;
   
       } catch (err) {
-        // console.warn(`Skipping ${source.name}: ${err.message}`);
+        // Silently fail for one provider so the rest still load
         return null;
       }
     });
