@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { auth, googleProvider, db, storage } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, GoogleAuthProvider } from "firebase/auth";
-import { doc, setDoc, getDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, updateDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, updateDoc, deleteField } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -1131,7 +1131,7 @@ return (
         {/* 1. MILEAGE CHART CONTAINER */}
         {/* We give this EXTRA height (400px) so the X-Axis labels have plenty of room inside */}
         <div style={{ 
-          minHeight: '400px',    // <--- INCREASED HEIGHT to fit labels
+          height: '400px',    // <--- INCREASED HEIGHT to fit labels
           width: '100%', 
           position: 'relative',
           zIndex: 1
