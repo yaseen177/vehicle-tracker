@@ -7,7 +7,10 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { PDFDocument, rgb } from 'pdf-lib'; 
 import QRCode from 'qrcode'; // NEW
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'; // NEW
+import { 
+  LineChart, Line, BarChart, Bar, // Added BarChart, Bar
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
+} from 'recharts';
 import "./App.css";
 
 // --- HUGE LIST OF UK INSURERS (Static Data) ---
@@ -423,84 +426,132 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
 };
 
 
-// --- UPDATED COMPONENT: PROPORTIONAL MILEAGE GRAPH ---
+// --- UPDATED: MILEAGE COMPONENT (Line & Bar Toggle) ---
 const MileageAnalysis = ({ motTests }) => {
-  // 1. Process Data
-  const data = useMemo(() => {
+  const [view, setView] = useState("line"); // 'line' or 'bar'
+
+  // 1. Process Data for LINE Graph (Cumulative)
+  const lineData = useMemo(() => {
     if (!motTests || motTests.length === 0) return [];
-    
-    // Extract valid mileage, sort by date ascending
     return motTests
       .filter(m => m.odometerValue && m.completedDate)
       .map(m => ({
-        timestamp: new Date(m.completedDate).getTime(), // Numeric value for X-Axis
-        dateObj: new Date(m.completedDate),
+        timestamp: new Date(m.completedDate).getTime(),
+        dateStr: new Date(m.completedDate).toLocaleDateString('en-GB', { month:'short', year:'2-digit' }),
         miles: parseInt(m.odometerValue),
       }))
       .sort((a, b) => a.timestamp - b.timestamp);
   }, [motTests]);
 
-  if (data.length < 2) return null; 
+  // 2. Process Data for BAR Graph (Annual Usage)
+  const barData = useMemo(() => {
+    if (!lineData || lineData.length < 2) return [];
 
-  // 2. Calculate Stats
-  const first = data[0];
-  const last = data[data.length - 1];
-  const yearsDiff = (last.dateObj - first.dateObj) / (1000 * 60 * 60 * 24 * 365);
+    // Group by Year: Find the MAX mileage recorded in each calendar year
+    const byYear = {};
+    lineData.forEach(d => {
+      const year = new Date(d.timestamp).getFullYear();
+      // Keep the highest mileage for that year (ignores lower retest mileages)
+      if (!byYear[year] || d.miles > byYear[year]) {
+        byYear[year] = d.miles;
+      }
+    });
+
+    // Calculate difference between years
+    const years = Object.keys(byYear).sort();
+    const yearlyUsage = [];
+
+    for (let i = 1; i < years.length; i++) {
+      const currentYear = years[i];
+      const prevYear = years[i-1];
+      const diff = byYear[currentYear] - byYear[prevYear];
+      
+      // Only show if positive (and ignore tiny retest errors crossing year boundaries)
+      if (diff > 0) {
+        yearlyUsage.push({
+          year: currentYear,
+          usage: diff
+        });
+      }
+    }
+    return yearlyUsage;
+  }, [lineData]);
+
+  if (lineData.length < 2) return null;
+
+  // Stats
+  const first = lineData[0];
+  const last = lineData[lineData.length - 1];
+  const yearsDiff = (last.timestamp - first.timestamp) / (1000 * 60 * 60 * 24 * 365);
   const avgMiles = yearsDiff > 0 ? Math.round((last.miles - first.miles) / yearsDiff) : 0;
 
-  // Formatter for Dates (e.g. "Jan 24")
+  // Formatter
   const formatDate = (unixTime) => new Date(unixTime).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
 
   return (
     <div className="bento-card" style={{ marginTop: '20px', padding: '24px' }}>
-      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px'}}>
-         <h3 style={{margin:0}}>Mileage History</h3>
-         <div style={{textAlign:'right'}}>
-            <div style={{fontSize:'0.8rem', color:'#9ca3af'}}>Est. Annual Usage</div>
-            <div style={{fontSize:'1.1rem', fontWeight:'bold', color:'var(--primary)'}}>
-               {avgMiles.toLocaleString()} miles/yr
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'20px'}}>
+         <div>
+            <h3 style={{margin:0, marginBottom:'4px'}}>Mileage Analysis</h3>
+            <div style={{fontSize:'0.9rem', color:'#9ca3af'}}>
+               Avg: <span style={{color:'var(--primary)', fontWeight:'bold'}}>{avgMiles.toLocaleString()}</span> miles/yr
             </div>
+         </div>
+
+         {/* TOGGLE SWITCH */}
+         <div style={{background:'#1f2937', padding:'4px', borderRadius:'8px', display:'flex', gap:'4px'}}>
+            <button 
+              onClick={() => setView("line")}
+              style={{
+                background: view === 'line' ? '#374151' : 'transparent',
+                color: view === 'line' ? 'white' : '#9ca3af',
+                border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '0.85rem', cursor:'pointer'
+              }}
+            >
+              📈 Progression
+            </button>
+            <button 
+              onClick={() => setView("bar")}
+              style={{
+                background: view === 'bar' ? '#374151' : 'transparent',
+                color: view === 'bar' ? 'white' : '#9ca3af',
+                border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '0.85rem', cursor:'pointer'
+              }}
+            >
+              📊 Annual
+            </button>
          </div>
       </div>
       
-      <div style={{ width: '100%', height: 250 }}>
+      <div style={{ width: '100%', height: 280 }}>
         <ResponsiveContainer>
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-            
-            {/* PROPORTIONAL TIME AXIS */}
-            <XAxis 
-              dataKey="timestamp" 
-              type="number" 
-              domain={['dataMin', 'dataMax']} 
-              tickFormatter={formatDate}
-              stroke="#666" 
-              tick={{fontSize: 12}} 
-            />
-            
-            <YAxis 
-              stroke="#666" 
-              tick={{fontSize: 12}} 
-              tickFormatter={(val) => `${(val/1000).toFixed(0)}k`} 
-              domain={['auto', 'auto']} // Auto scale Y axis
-            />
-            
-            <Tooltip 
-              contentStyle={{ backgroundColor: '#181b21', border: '1px solid #333', borderRadius:'8px' }}
-              labelStyle={{ color: '#fff', marginBottom: '5px' }}
-              labelFormatter={formatDate} // Show date instead of timestamp number
-              formatter={(val) => [`${val.toLocaleString()} mi`, "Mileage"]}
-            />
-            
-            <Line 
-              type="monotone" 
-              dataKey="miles" 
-              stroke="#fbbf24" 
-              strokeWidth={3} 
-              dot={{ r: 4, fill: '#fbbf24' }} 
-              activeDot={{ r: 6 }} 
-            />
-          </LineChart>
+          {view === 'line' ? (
+            <LineChart data={lineData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+              <XAxis dataKey="timestamp" type="number" domain={['dataMin', 'dataMax']} tickFormatter={formatDate} stroke="#666" tick={{fontSize: 12}} />
+              <YAxis stroke="#666" tick={{fontSize: 12}} tickFormatter={(val) => `${(val/1000).toFixed(0)}k`} domain={['auto', 'auto']} />
+              <Tooltip 
+                contentStyle={{ backgroundColor: '#181b21', border: '1px solid #333' }}
+                labelStyle={{ color: '#fff', marginBottom:'5px' }}
+                labelFormatter={formatDate}
+                formatter={(val) => [`${val.toLocaleString()} mi`, "Total Mileage"]}
+              />
+              <Line type="monotone" dataKey="miles" stroke="#fbbf24" strokeWidth={3} dot={{r:4, fill:'#fbbf24'}} />
+            </LineChart>
+          ) : (
+            <BarChart data={barData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#333" />
+              <XAxis dataKey="year" stroke="#666" tick={{fontSize: 12}} />
+              <YAxis stroke="#666" tick={{fontSize: 12}} tickFormatter={(val) => `${(val/1000).toFixed(0)}k`} />
+              <Tooltip 
+                cursor={{fill: 'rgba(255,255,255,0.05)'}}
+                contentStyle={{ backgroundColor: '#181b21', border: '1px solid #333' }}
+                labelStyle={{ color: '#fff', marginBottom:'5px' }}
+                formatter={(val) => [`${val.toLocaleString()} mi`, "Driven this Year"]}
+              />
+              <Bar dataKey="usage" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={60} />
+            </BarChart>
+          )}
         </ResponsiveContainer>
       </div>
     </div>
