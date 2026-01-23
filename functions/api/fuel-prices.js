@@ -1,7 +1,7 @@
 export async function onRequest(context) {
     // We use AllOrigins as the proxy for Tesco now
     // This routes the request through a different IP address
-    const TESCO_URL = "https://www.tesco.com/fuel_prices/fuel_prices_data.json";
+    const TESCO_URL = "https://script.google.com/d/1pJ2qUL2On1isWvjiRXNO8hMgCtmPPJTezNUZZwzsccfR-5_5BTW1W4rR/edit?usp=sharing";
     const TESCO_PROXY = `https://api.allorigins.win/raw?url=${encodeURIComponent(TESCO_URL)}`;
     
     const SOURCES = [
