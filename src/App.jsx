@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { auth, googleProvider, db, storage } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, GoogleAuthProvider } from "firebase/auth";
 import { doc, setDoc, getDoc, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, updateDoc } from "firebase/firestore";
@@ -1120,11 +1120,14 @@ return (
        </div>
     </div>
 
-    {/* --- RIGHT COLUMN (TABS & HISTORY) (Unchanged) --- */}
-    <div>
+    // --- RIGHT COLUMN (TABS & HISTORY) ---
+<div>
+  {/* WRAP THE CHART IN A DIV WITH FIXED HEIGHT */}
+  <div style={{ height: '250px', width: '100%', marginBottom: '20px' }}>
       <MileageAnalysis motTests={vehicle.motTests} />
+  </div>
 
-      <div className="tabs" style={{marginTop:'20px'}}>
+  <div className="tabs" style={{marginTop:'20px'}}>
         <button onClick={() => setTab("logs")} className={`tab-btn ${tab==='logs'?'active':''}`}>Service History</button>
         <button onClick={() => setTab("mot")} className={`tab-btn ${tab==='mot'?'active':''}`}>MOT History</button>
         <button onClick={() => setTab("docs")} className={`tab-btn ${tab==='docs'?'active':''}`}>Documents</button>
