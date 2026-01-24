@@ -208,7 +208,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
           options={{
             styles: mapStyles,
             disableDefaultUI: true,
-            clickableIcons: false
+            clickableIcons: false,
+            gestureHandling: "cooperative"
           }}
         >
           {/* My Location Pin */}
