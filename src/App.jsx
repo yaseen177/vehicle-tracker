@@ -248,11 +248,74 @@ function MainApp() {
 
 function LoginScreen({ onLogin }) {
   return (
-    <div style={{display:'flex', height:'100vh', alignItems:'center', justifyContent:'center'}}>
-      <div className="bento-card fade-in" style={{textAlign:'center', maxWidth:'400px', border:'1px solid var(--border)'}}>
-        <h1 style={{fontSize:'2rem', marginBottom:'10px'}}>My Garage</h1>
-        <p style={{marginBottom:'30px'}}>The premium tracker for your vehicle history.</p>
-        <button onClick={onLogin} className="btn btn-primary btn-full">Sign in with Google</button>
+    <div style={{
+      display:'flex', 
+      height:'100vh', 
+      alignItems:'center', 
+      justifyContent:'center',
+      background: 'radial-gradient(circle at 50% 10%, #1f2937 0%, #000000 100%)', // Subtle gradient background
+      padding: '20px'
+    }}>
+      <div className="bento-card fade-in" style={{
+        textAlign:'center', 
+        maxWidth:'420px', 
+        width: '100%',
+        border:'1px solid rgba(255,255,255,0.1)', 
+        boxShadow: '0 20px 50px rgba(0,0,0,0.5)'
+      }}>
+        
+        {/* 1. BRANDING */}
+        <div style={{fontSize:'3rem', marginBottom:'10px'}}>🚗</div>
+        <h1 style={{fontSize:'2.2rem', marginBottom:'8px', fontWeight:'800', letterSpacing:'-1px'}}>
+          My Garage
+        </h1>
+        <p style={{color:'#9ca3af', fontSize:'1.1rem', marginBottom:'30px', lineHeight:'1.5'}}>
+          The smart companion for your vehicle's history, fuel, and maintenance.
+        </p>
+
+        {/* 2. FEATURE GRID (Mini-sell) */}
+        <div style={{
+          display:'grid', 
+          gridTemplateColumns:'1fr 1fr 1fr', 
+          gap:'10px', 
+          marginBottom:'30px'
+        }}>
+          <div style={{background:'rgba(255,255,255,0.05)', padding:'10px', borderRadius:'8px'}}>
+             <div style={{fontSize:'1.5rem', marginBottom:'5px'}}>⛽</div>
+             <div style={{fontSize:'0.75rem', color:'#ccc'}}>Fuel Prices</div>
+          </div>
+          <div style={{background:'rgba(255,255,255,0.05)', padding:'10px', borderRadius:'8px'}}>
+             <div style={{fontSize:'1.5rem', marginBottom:'5px'}}>📅</div>
+             <div style={{fontSize:'0.75rem', color:'#ccc'}}>Reminders</div>
+          </div>
+          <div style={{background:'rgba(255,255,255,0.05)', padding:'10px', borderRadius:'8px'}}>
+             <div style={{fontSize:'1.5rem', marginBottom:'5px'}}>📉</div>
+             <div style={{fontSize:'0.75rem', color:'#ccc'}}>Valuation</div>
+          </div>
+        </div>
+
+        {/* 3. PRIMARY ACTION */}
+        <button 
+          onClick={onLogin} 
+          className="btn btn-primary btn-full" 
+          style={{
+            padding:'16px', 
+            fontSize:'1.1rem', 
+            display:'flex', 
+            alignItems:'center', 
+            justifyContent:'center', 
+            gap:'10px'
+          }}
+        >
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G" style={{width:'20px', height:'20px'}} />
+          Sign in with Google
+        </button>
+
+        {/* 4. FOOTER */}
+        <p style={{marginTop:'24px', fontSize:'0.8rem', color:'#52525b'}}>
+          Secure login powered by Google Auth. <br/>
+          By continuing, you agree to our Terms.
+        </p>
       </div>
     </div>
   );
