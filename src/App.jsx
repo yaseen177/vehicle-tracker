@@ -6,9 +6,9 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { PDFDocument, rgb } from 'pdf-lib'; 
-import QRCode from 'qrcode'; // NEW
+import QRCode from 'qrcode'; 
 import { 
-  LineChart, Line, BarChart, Bar, // Added BarChart, Bar
+  LineChart, Line, BarChart, Bar, 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import "./App.css";
@@ -59,7 +59,6 @@ const UK_INSURERS = [
   { name: "Acorn", domain: "acorninsure.co.uk" }
 ];
 
-
 // --- TOAST NOTIFICATION ---
 const ToastContext = React.createContext();
 function ToastProvider({ children }) {
@@ -91,32 +90,32 @@ function MainApp() {
   const [activeVehicleId, setActiveVehicleId] = useState(null);
   const showToast = React.useContext(ToastContext);
 
-  // Modal State
+  // UI State
   const [showAddWizard, setShowAddWizard] = useState(false);
+  const [isMenuOpen, setMenuOpen] = useState(false); // NEW: Menu State
 
   useEffect(() => onAuthStateChanged(auth, u => {
     setUser(u);
     if (u) loadGarage(u.uid);
   }), []);
 
-  // --- NEW: HANDLE BROWSER "BACK" & SWIPE GESTURES ---
+  // --- HANDLE BROWSER "BACK" & SWIPE GESTURES ---
   useEffect(() => {
-    // When the user presses Back (or swipes on iPhone), this event fires
     const handlePopState = (event) => {
-      // If we are currently looking at a dashboard, close it and go to garage
       if (view === 'dashboard') {
         setView("garage");
         setActiveVehicleId(null);
-      } 
-      // If the modal is open, close it (optional nice-to-have)
-      else if (showAddWizard) {
+      } else if (showAddWizard) {
         setShowAddWizard(false);
+      } else if (isMenuOpen) {
+        setMenuOpen(false);
+      } else if (view !== 'garage') {
+        setView("garage");
       }
     };
-
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [view, showAddWizard]); // Re-run when view changes
+  }, [view, showAddWizard, isMenuOpen]);
 
   const loadGarage = (uid) => {
     onSnapshot(collection(db, "users", uid, "vehicles"), (snap) => {
@@ -135,7 +134,6 @@ function MainApp() {
   const deleteVehicle = async (vehicleId) => {
     if (window.confirm("Permanently delete this vehicle?")) {
       await deleteDoc(doc(db, "users", user.uid, "vehicles", vehicleId));
-      // Go back properly
       if (activeVehicleId === vehicleId) { 
          window.history.back(); 
       }
@@ -143,28 +141,59 @@ function MainApp() {
     }
   };
 
-  // --- UPDATED NAVIGATION HANDLER ---
   const openVehicle = (id) => {
     setActiveVehicleId(id);
     setView("dashboard");
-    // This is the Magic Line: It adds a "fake" page to the browser history
-    // So when user swipes back, they don't leave the app.
     window.history.pushState({ view: 'dashboard' }, '', '#dashboard');
   };
 
-  // --- UPDATED BACK BUTTON HANDLER ---
-  const handleBack = () => {
-    // Instead of setting view manually, we tell browser to go back.
-    // This triggers the 'popstate' listener above, which handles the UI update.
-    // This keeps the history stack clean.
-    window.history.back();
+  // --- MENU NAVIGATION HANDLER ---
+  const handleNav = (targetView) => {
+    setMenuOpen(false);
+    if (targetView === 'garage') setActiveVehicleId(null);
+    setView(targetView);
+    // Push state so back button works for these views too
+    window.history.pushState({ view: targetView }, '', `#${targetView}`);
   };
 
   if (!user) return <LoginScreen onLogin={handleLogin} />;
 
   return (
-    <div className="app-wrapper fade-in" style={{display:'flex', flexDirection:'column', minHeight:'100vh'}}>
-      {/* 1. WIZARD MODAL */}
+    <div className="app-wrapper fade-in" style={{display:'flex', flexDirection:'column', minHeight:'100vh', position:'relative', overflowX:'hidden'}}>
+      
+      {/* 1. SLIDE-OUT MENU OVERLAY */}
+      <div 
+        className={`nav-menu-overlay ${isMenuOpen ? 'open' : ''}`} 
+        onClick={() => setMenuOpen(false)}
+      >
+        <div className="nav-menu-drawer" onClick={e => e.stopPropagation()}>
+           <div style={{padding:'20px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+              <h2 style={{margin:0, fontSize:'1.2rem', color:'white'}}>Menu</h2>
+              <button onClick={() => setMenuOpen(false)} style={{background:'none', border:'none', fontSize:'1.5rem', color:'#9ca3af', cursor:'pointer'}}>×</button>
+           </div>
+           
+           <nav style={{padding:'10px'}}>
+              <MenuLink icon="🚗" label="My Garage" active={view === 'garage'} onClick={() => handleNav('garage')} />
+              <MenuLink icon="⛽" label="Fuel Prices" active={view === 'fuel'} onClick={() => handleNav('fuel')} />
+              <MenuLink icon="👤" label="My Profile" active={view === 'profile'} onClick={() => handleNav('profile')} />
+              <div style={{height:'1px', background:'var(--border)', margin:'10px 0'}}></div>
+              <MenuLink icon="❓" label="Help & Features" active={view === 'help'} onClick={() => handleNav('help')} />
+              <button 
+                onClick={() => signOut(auth)} 
+                className="menu-link" 
+                style={{width:'100%', color:'#ef4444', justifyContent:'flex-start'}}
+              >
+                <span style={{marginRight:'12px', fontSize:'1.2rem'}}>🚪</span> Sign Out
+              </button>
+           </nav>
+
+           <div style={{marginTop:'auto', padding:'20px', textAlign:'center', color:'#52525b', fontSize:'0.75rem'}}>
+              My Garage v1.2<br/>Logged in as {user.email}
+           </div>
+        </div>
+      </div>
+
+      {/* 2. WIZARD MODAL */}
       {showAddWizard && (
         <AddVehicleWizard 
           user={user} 
@@ -173,21 +202,31 @@ function MainApp() {
         />
       )}
 
-      {/* 2. HEADER */}
+      {/* 3. HEADER */}
       <header className="top-nav">
-        <div className="logo" onClick={view !== 'garage' ? () => {setView('garage'); window.history.back()} : null}>
-           My Garage {view === 'dashboard' && activeVehicle && <span style={{opacity:0.5, fontWeight:400}}> / {activeVehicle.registration}</span>}
+        {/* Left Side: Logo/Back */}
+        <div className="logo" onClick={() => handleNav('garage')} style={{cursor:'pointer'}}>
+           {view === 'dashboard' ? (
+             <span style={{display:'flex', alignItems:'center', gap:'8px'}} onClick={(e) => { e.stopPropagation(); window.history.back(); }}>
+               <span style={{fontSize:'1.2rem'}}>←</span> Back
+             </span>
+           ) : (
+             "My Garage"
+           )}
         </div>
-        <div style={{display:'flex', gap:'12px'}}>
-           {view === 'dashboard' && <button onClick={handleBack} className="btn btn-secondary">Back</button>}
-           <button onClick={() => setView("fuel")} className="btn btn-secondary btn-sm" style={{fontSize:'1.2rem', padding:'4px 12px'}}>⛽</button>
 
-           <button onClick={() => setView("profile")} className="btn btn-secondary btn-sm" style={{fontSize:'1.2rem', padding:'4px 12px'}}>👤</button>
-        </div>
+        {/* Right Side: Menu Button */}
+        <button 
+          onClick={() => setMenuOpen(true)} 
+          className="btn btn-secondary" 
+          style={{fontSize:'1.3rem', padding:'8px 12px', background:'transparent', border:'none'}}
+        >
+          ☰
+        </button>
       </header>
 
-      {/* 3. MAIN CONTENT AREA (Flex Grow pushes footer down) */}
-      <div style={{flex: 1}}>
+      {/* 4. MAIN CONTENT AREA */}
+      <div style={{flex: 1, position:'relative'}}>
         {view === 'garage' && (
           <GarageView 
             vehicles={myVehicles} 
@@ -209,113 +248,129 @@ function MainApp() {
           <ProfileView 
             user={user} 
             showToast={showToast} 
-            onBack={() => setView("garage")}
+            onBack={() => handleNav("garage")}
             onSignOut={() => signOut(auth)}
           />
         )}
 
-        {/* --- ADD THIS SECTION HERE --- */}
         {view === 'fuel' && (
           <FuelView 
             googleMapsApiKey={import.meta.env.VITE_GOOGLE_MAPS_KEY} 
-            logoKey={LOGO_DEV_PK} // <--- ADD THIS
+            logoKey={LOGO_DEV_PK}
           />
         )}
 
+        {/* NEW: HELP VIEW */}
+        {view === 'help' && <HelpView onBack={() => handleNav('garage')} />}
+
       </div>
 
-      {/* 4. NEW FOOTER */}
-      <footer style={{
-        textAlign: 'center', 
-        padding: '30px 20px', 
-        color: '#6b7280', 
-        fontSize: '0.85rem',
-        borderTop: '1px solid rgba(255,255,255,0.05)',
-        marginTop: 'auto'
-      }}>
-        <p style={{margin:0}}>Created by Yaseen Hussain</p>
-        <p style={{margin:'4px 0 0 0', opacity:0.6, fontSize:'0.75rem'}}>
-          &copy; {new Date().getFullYear()} All Rights Reserved.
-        </p>
-      </footer>
+      {/* 5. FOOTER (Hidden in Map View to save space) */}
+      {view !== 'fuel' && (
+        <footer style={{
+          textAlign: 'center', 
+          padding: '30px 20px', 
+          color: '#6b7280', 
+          fontSize: '0.85rem',
+          borderTop: '1px solid rgba(255,255,255,0.05)',
+          marginTop: 'auto'
+        }}>
+          <p style={{margin:0}}>Created by Yaseen Hussain</p>
+          <p style={{margin:'4px 0 0 0', opacity:0.6, fontSize:'0.75rem'}}>
+            &copy; {new Date().getFullYear()} All Rights Reserved.
+          </p>
+        </footer>
+      )}
 
     </div>
   );
 }
 
+// --- HELPER COMPONENTS ---
 
-// --- VIEWS ---
+const MenuLink = ({ icon, label, active, onClick }) => (
+  <button 
+    onClick={onClick}
+    className="menu-link"
+    style={{
+      background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+      color: active ? 'white' : '#9ca3af',
+      fontWeight: active ? 'bold' : 'normal'
+    }}
+  >
+    <span style={{marginRight:'12px', fontSize:'1.2rem'}}>{icon}</span> {label}
+  </button>
+);
+
+// --- NEW HELP VIEW COMPONENT ---
+function HelpView({ onBack }) {
+  return (
+    <div className="fade-in" style={{maxWidth:'600px', margin:'0 auto', padding:'20px'}}>
+      <button onClick={onBack} className="btn-text" style={{marginBottom:'20px'}}>← Back to Garage</button>
+      
+      <div className="bento-card">
+        <h1 style={{fontSize:'2rem', marginBottom:'10px'}}>How to use My Garage</h1>
+        <p style={{color:'#9ca3af', marginBottom:'30px'}}>
+          Welcome to your complete vehicle management companion. Here is a quick guide to what this app can do.
+        </p>
+
+        <HelpItem 
+          icon="🚗" title="Vehicle Tracker" 
+          desc="Add any UK vehicle by registration. We automatically pull the official DVLA data including Tax & MOT status, engine specs, and colour." 
+        />
+        <HelpItem 
+          icon="📅" title="Smart Reminders" 
+          desc="Never miss a renewal. We track your MOT, Tax, and Insurance expiry dates and send you text messages before they are due." 
+        />
+        <HelpItem 
+          icon="⛽" title="Fuel Price Finder" 
+          desc="Find the cheapest petrol or diesel near you. Use the map to compare prices at Asda, Sainsbury's, BP, Shell, and more." 
+        />
+        <HelpItem 
+          icon="🔧" title="Service History" 
+          desc="Digitalise your paperwork. Upload photos of receipts and invoices to keep a permanent digital record of your car's maintenance." 
+        />
+        <HelpItem 
+          icon="📤" title="Selling Bundle" 
+          desc="Selling your car? Click 'Download PDF' to generate a professional history report with all your receipts and documents attached automatically." 
+        />
+
+        <div style={{marginTop:'30px', padding:'15px', background:'rgba(59, 130, 246, 0.1)', border:'1px solid #3b82f6', borderRadius:'8px'}}>
+           <strong>💡 Pro Tip:</strong> You can save a shortcut to this website on your iPhone or Android home screen to use it just like a native app.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const HelpItem = ({ icon, title, desc }) => (
+  <div style={{display:'flex', gap:'16px', marginBottom:'24px'}}>
+     <div style={{fontSize:'1.8rem', background:'rgba(255,255,255,0.05)', width:'50px', height:'50px', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:'12px', flexShrink:0}}>
+       {icon}
+     </div>
+     <div>
+       <h3 style={{margin:'0 0 6px 0', color:'white'}}>{title}</h3>
+       <p style={{margin:0, fontSize:'0.9rem', color:'#9ca3af', lineHeight:'1.5'}}>{desc}</p>
+     </div>
+  </div>
+);
+
+// --- OTHER VIEWS (Unchanged but included for completeness) ---
 
 function LoginScreen({ onLogin }) {
   return (
     <div style={{
-      display:'flex', 
-      height:'100vh', 
-      alignItems:'center', 
-      justifyContent:'center',
-      background: 'radial-gradient(circle at 50% 10%, #1f2937 0%, #000000 100%)', // Subtle gradient background
-      padding: '20px'
+      display:'flex', height:'100vh', alignItems:'center', justifyContent:'center',
+      background: 'radial-gradient(circle at 50% 10%, #1f2937 0%, #000000 100%)', padding: '20px'
     }}>
-      <div className="bento-card fade-in" style={{
-        textAlign:'center', 
-        maxWidth:'420px', 
-        width: '100%',
-        border:'1px solid rgba(255,255,255,0.1)', 
-        boxShadow: '0 20px 50px rgba(0,0,0,0.5)'
-      }}>
-        
-        {/* 1. BRANDING */}
+      <div className="bento-card fade-in" style={{textAlign:'center', maxWidth:'420px', width: '100%', border:'1px solid rgba(255,255,255,0.1)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)'}}>
         <div style={{fontSize:'3rem', marginBottom:'10px'}}>🚗</div>
-        <h1 style={{fontSize:'2.2rem', marginBottom:'8px', fontWeight:'800', letterSpacing:'-1px'}}>
-          My Garage
-        </h1>
-        <p style={{color:'#9ca3af', fontSize:'1.1rem', marginBottom:'30px', lineHeight:'1.5'}}>
-          The smart companion for your vehicle's history, fuel, and maintenance.
-        </p>
-
-        {/* 2. FEATURE GRID (Mini-sell) */}
-        <div style={{
-          display:'grid', 
-          gridTemplateColumns:'1fr 1fr 1fr', 
-          gap:'10px', 
-          marginBottom:'30px'
-        }}>
-          <div style={{background:'rgba(255,255,255,0.05)', padding:'10px', borderRadius:'8px'}}>
-             <div style={{fontSize:'1.5rem', marginBottom:'5px'}}>⛽</div>
-             <div style={{fontSize:'0.75rem', color:'#ccc'}}>Fuel Prices</div>
-          </div>
-          <div style={{background:'rgba(255,255,255,0.05)', padding:'10px', borderRadius:'8px'}}>
-             <div style={{fontSize:'1.5rem', marginBottom:'5px'}}>📅</div>
-             <div style={{fontSize:'0.75rem', color:'#ccc'}}>Reminders</div>
-          </div>
-          <div style={{background:'rgba(255,255,255,0.05)', padding:'10px', borderRadius:'8px'}}>
-             <div style={{fontSize:'1.5rem', marginBottom:'5px'}}>📉</div>
-             <div style={{fontSize:'0.75rem', color:'#ccc'}}>Valuation</div>
-          </div>
-        </div>
-
-        {/* 3. PRIMARY ACTION */}
-        <button 
-          onClick={onLogin} 
-          className="btn btn-primary btn-full" 
-          style={{
-            padding:'16px', 
-            fontSize:'1.1rem', 
-            display:'flex', 
-            alignItems:'center', 
-            justifyContent:'center', 
-            gap:'10px'
-          }}
-        >
+        <h1 style={{fontSize:'2.2rem', marginBottom:'8px', fontWeight:'800', letterSpacing:'-1px'}}>My Garage</h1>
+        <p style={{color:'#9ca3af', fontSize:'1.1rem', marginBottom:'30px', lineHeight:'1.5'}}>The smart companion for your vehicle's history, fuel, and maintenance.</p>
+        <button onClick={onLogin} className="btn btn-primary btn-full" style={{padding:'16px', fontSize:'1.1rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'10px'}}>
           <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G" style={{width:'20px', height:'20px'}} />
           Sign in with Google
         </button>
-
-        {/* 4. FOOTER */}
-        <p style={{marginTop:'24px', fontSize:'0.8rem', color:'#52525b'}}>
-          Secure login powered by Google Auth. <br/>
-          By continuing, you agree to our Terms.
-        </p>
       </div>
     </div>
   );
@@ -327,11 +382,8 @@ function GarageView({ vehicles, onOpen, onAddClick }) {
       <div className="bento-card" style={{marginBottom:'40px', textAlign:'center', padding:'40px 20px', background:'linear-gradient(180deg, var(--surface) 0%, var(--surface-highlight) 100%)'}}>
         <h2>Track a New Vehicle</h2>
         <p style={{marginBottom:'24px'}}>Add a car to check MOT, Tax, and manage history.</p>
-        <button onClick={onAddClick} className="btn btn-primary" style={{padding:'12px 40px', fontSize:'1.1rem'}}>
-          + Add Vehicle
-        </button>
+        <button onClick={onAddClick} className="btn btn-primary" style={{padding:'12px 40px', fontSize:'1.1rem'}}>+ Add Vehicle</button>
       </div>
-
       <div className="garage-grid">
         {vehicles.map(car => (
           <div key={car.id} onClick={() => onOpen(car.id)} className="garage-card">
