@@ -623,3 +623,87 @@ input[type="date"] {
   background: rgba(255,255,255,0.05);
   color: white;
 }
+
+/* --- WIZARD STYLES --- */
+.wizard-progress {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 30px;
+}
+
+.progress-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+  transition: all 0.3s ease;
+}
+
+.progress-dot.active {
+  background: var(--primary);
+  transform: scale(1.2);
+}
+
+/* REALISTIC UK PLATE INPUT */
+.uk-plate-input-wrapper {
+  background: #facc15; /* UK Plate Yellow */
+  border-radius: 10px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+  max-width: 320px;
+  margin: 0 auto 20px auto;
+  border: 2px solid rgba(0,0,0,0.1);
+}
+
+.uk-plate-gb {
+  background: #003399; /* Euro Blue */
+  color: white;
+  padding: 4px 6px;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: bold;
+  margin-right: 12px;
+  box-shadow: inset 0 0 5px rgba(0,0,0,0.2);
+}
+
+.uk-plate-input {
+  background: transparent;
+  border: none;
+  font-family: 'Courier New', monospace; /* Monospace for alignment */
+  font-weight: 900;
+  font-size: 2.2rem;
+  text-transform: uppercase;
+  color: black;
+  width: 100%;
+  text-align: center;
+  letter-spacing: 2px;
+  outline: none;
+}
+
+.uk-plate-input::placeholder {
+  color: rgba(0,0,0,0.2);
+}
+
+/* SKIP BUTTON */
+.btn-skip {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #9ca3af;
+  margin-top: 15px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.btn-skip:hover {
+  background: rgba(255,255,255,0.05);
+  color: white;
+  border-color: white;
+}

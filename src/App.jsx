@@ -401,12 +401,13 @@ function GarageView({ vehicles, onOpen, onAddClick }) {
   );
 }
 
-// --- UPDATED WIZARD (With Local UK Search) ---
+// --- IMPROVED WIZARD ---
 const AddVehicleWizard = ({ user, onClose, onComplete }) => {
   const [step, setStep] = useState(1);
   const [reg, setReg] = useState("");
   const [vehicleData, setVehicleData] = useState(null);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
   
   // Insurance State
   const [insurer, setInsurer] = useState(null);
@@ -418,7 +419,6 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
 
   const LOGO_DEV_PK = import.meta.env.VITE_LOGO_DEV_PK;
 
-  // Top 6 for the Quick Grid
   const commonInsurers = [
     { name: "Admiral", domain: "admiral.com" },
     { name: "Aviva", domain: "aviva.co.uk" },
@@ -428,35 +428,49 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
     { name: "AXA", domain: "axa.co.uk" }
   ];
 
-  // --- VEHICLE FETCH (Step 1 -> 2) ---
+  // --- HELPER: FORMAT PLATE (AA11 AAA) ---
+  const handleRegChange = (e) => {
+    let val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    // Simple UK formatting logic (insert space before last 3 chars if length > 4)
+    if (val.length > 4) {
+      val = val.slice(0, val.length - 3) + " " + val.slice(val.length - 3);
+    }
+    setReg(val);
+    setError(null);
+  };
+
+  // --- STEP 1 -> 2: FETCH ---
   const fetchVehicle = async () => {
-    if(!reg) return;
-    setStep(2);
+    if (reg.length < 2) { setError("Please enter a valid registration."); return; }
+    
+    setLoading(true);
+    setError(null);
+    
     try {
       const res = await fetch("/api/vehicle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ registration: reg })
+        body: JSON.stringify({ registration: reg.replace(/\s/g, '') })
       });
-      if (res.status === 404) throw new Error("Vehicle not found.");
+      
+      if (res.status === 404) throw new Error("Vehicle not found. Check the registration.");
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       
       setVehicleData(data);
-      setTimeout(() => setStep(3), 2500);
+      setStep(2); // Go to Confirm Step
     } catch (err) {
       setError(err.message);
-      setStep(1);
     }
+    setLoading(false);
   };
 
-  // --- LOCAL SEARCH FILTER (Instant) ---
+  // --- LOCAL SEARCH FILTER ---
   useEffect(() => {
     if (searchTerm.length < 1) {
       setSearchResults([]);
       return;
     }
-    // Filter the huge UK_INSURERS list
     const matches = UK_INSURERS.filter(ins => 
       ins.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -466,16 +480,16 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
   const handleSelectInsurer = (selected) => {
     setInsurer(selected);
     setSearchTerm(selected.name);
-    setSearchResults([]); // Close dropdown
+    setSearchResults([]);
   };
 
-  // --- SAVE FINAL DATA ---
-  const saveVehicle = async () => {
+  // --- FINAL SAVE ---
+  const saveVehicle = async (skipInsurance = false) => {
     if(!vehicleData) return;
     
-    // If user typed a custom name that isn't in our list, use that
-    const finalProviderName = insurer ? insurer.name : searchTerm;
-    const finalProviderLogo = insurer ? insurer.domain : ""; 
+    const finalProviderName = !skipInsurance && insurer ? insurer.name : (!skipInsurance ? searchTerm : "");
+    const finalProviderLogo = !skipInsurance && insurer ? insurer.domain : ""; 
+    const finalInsuranceDate = !skipInsurance ? insuranceDate : "";
     
     const newCar = {
       registration: vehicleData.registration || reg,
@@ -488,10 +502,10 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
       manufactureDate: vehicleData.manufactureDate,
       taxExpiry: vehicleData.taxDueDate || "",
       motTests: vehicleData.motTests || [], 
-      motExpiry: vehicleData.motTests ? vehicleData.motTests[0].expiryDate : "",
+      motExpiry: vehicleData.motTests && vehicleData.motTests.length > 0 ? vehicleData.motTests[0].expiryDate : "",
       
       // Insurance Data
-      insuranceExpiry: insuranceDate,
+      insuranceExpiry: finalInsuranceDate,
       insuranceProvider: finalProviderName,
       insuranceDomain: finalProviderLogo,
       
@@ -504,71 +518,97 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
 
   return (
     <div className="modal-overlay">
-      <div className="wizard-card">
-        <button onClick={onClose} style={{position:'absolute', top:20, right:20, background:'none', border:'none', color:'#666', fontSize:'1.5rem', cursor:'pointer'}}>×</button>
+      <div className="wizard-card" style={{padding:'30px 24px'}}>
+        <button onClick={onClose} style={{position:'absolute', top:15, right:15, background:'none', border:'none', color:'#666', fontSize:'1.5rem', cursor:'pointer'}}>×</button>
 
-        {/* STEP 1: ENTER REG */}
+        {/* PROGRESS DOTS */}
+        <div className="wizard-progress">
+           <div className={`progress-dot ${step >= 1 ? 'active' : ''}`}></div>
+           <div className={`progress-dot ${step >= 2 ? 'active' : ''}`}></div>
+           <div className={`progress-dot ${step >= 3 ? 'active' : ''}`}></div>
+        </div>
+
+        {/* STEP 1: ENTER REGISTRATION */}
         {step === 1 && (
-          <div className="wizard-step">
-            <h2 style={{color:'white'}}>Add a Vehicle</h2>
-            <p style={{marginBottom:'20px'}}>Enter the registration number to begin.</p>
-            <div className="plate-wrapper" style={{marginBottom:'20px'}}>
-              <input 
-                className="car-plate" 
-                style={{width:'100%', textAlign:'center', background:'transparent', border:'none', outline:'none', color:'black', textTransform:'uppercase'}}
-                placeholder="AA19 AAA"
-                value={reg}
-                onChange={e => setReg(e.target.value.toUpperCase())}
-                autoFocus
-              />
+          <div className="wizard-step fade-in">
+            <h2 style={{color:'white', marginBottom:'8px'}}>Add a Vehicle</h2>
+            <p style={{marginBottom:'24px', color:'#9ca3af'}}>Enter the registration number to begin.</p>
+            
+            {/* REALISTIC PLATE INPUT */}
+            <div className="uk-plate-input-wrapper">
+               <div className="uk-plate-gb">
+                  <span>UK</span>
+               </div>
+               <input 
+                 className="uk-plate-input"
+                 placeholder="AA19 AAA"
+                 value={reg}
+                 onChange={handleRegChange}
+                 autoFocus
+                 onKeyDown={(e) => e.key === 'Enter' && fetchVehicle()}
+               />
             </div>
-            {error && <p style={{color:'var(--danger)', marginBottom:'15px'}}>{error}</p>}
-            <button onClick={fetchVehicle} className="btn btn-primary btn-full">Find Vehicle</button>
+
+            {error && <div style={{background:'rgba(239, 68, 68, 0.2)', color:'#fca5a5', padding:'10px', borderRadius:'8px', marginBottom:'15px', fontSize:'0.9rem'}}>⚠️ {error}</div>}
+            
+            <button 
+              onClick={fetchVehicle} 
+              disabled={loading}
+              className="btn btn-primary btn-full"
+              style={{height:'50px', fontSize:'1.1rem'}}
+            >
+              {loading ? <div className="spinner"></div> : "Find Vehicle"}
+            </button>
           </div>
         )}
 
-        {/* STEP 2: LOADING / SUCCESS */}
-        {step === 2 && (
-          <div className="wizard-step">
-            {!vehicleData ? (
-              <div style={{padding:'40px'}}>
-                <div className="spinner" style={{margin:'0 auto', width:40, height:40, borderWidth:4}}></div>
-                <p style={{marginTop:'20px'}}>Contacting DVLA & DVSA...</p>
-              </div>
-            ) : (
-              <div>
-                <h2 style={{color:'white', marginBottom:'20px'}}>Success!</h2>
-                <div className="plate-wrapper" style={{transform:'scale(0.8)'}}><div className="car-plate">{vehicleData.registration}</div></div>
-                <p style={{color:'white', fontWeight:'bold', marginTop:'10px'}}>{vehicleData.make} {vehicleData.model}</p>
-                <div style={{marginTop:'30px', textAlign:'left'}}>
-                   <div className="check-row"><span>Vehicle Specs (DVLA)</span><div className="check-icon">✓</div></div>
-                   <div className="check-row"><span>MOT History (DVSA)</span><div className="check-icon">✓</div></div>
-                   <div className="check-row"><span>Tax Status</span><div className="check-icon">✓</div></div>
-                </div>
-              </div>
-            )}
+        {/* STEP 2: CONFIRM VEHICLE */}
+        {step === 2 && vehicleData && (
+          <div className="wizard-step fade-in" style={{textAlign:'center'}}>
+            <h2 style={{color:'white', marginBottom:'20px'}}>Is this your vehicle?</h2>
+            
+            <div className="bento-card" style={{padding:'20px', marginBottom:'20px', background:'rgba(255,255,255,0.05)'}}>
+               <div style={{fontSize:'1.8rem', fontWeight:'bold', marginBottom:'5px'}}>{vehicleData.make}</div>
+               <div style={{fontSize:'1.2rem', color:'#d1d5db', marginBottom:'15px'}}>{vehicleData.model}</div>
+               
+               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', textAlign:'left'}}>
+                  <div style={{background:'#1f2937', padding:'8px', borderRadius:'6px'}}>
+                    <div style={{fontSize:'0.75rem', color:'#9ca3af'}}>Colour</div>
+                    <div style={{color:'white'}}>{vehicleData.primaryColour}</div>
+                  </div>
+                  <div style={{background:'#1f2937', padding:'8px', borderRadius:'6px'}}>
+                    <div style={{fontSize:'0.75rem', color:'#9ca3af'}}>Year</div>
+                    <div style={{color:'white'}}>{vehicleData.firstUsedDate ? new Date(vehicleData.firstUsedDate).getFullYear() : 'Unknown'}</div>
+                  </div>
+               </div>
+            </div>
+
+            <div style={{display:'flex', gap:'10px'}}>
+              <button onClick={() => setStep(1)} className="btn btn-secondary" style={{flex:1}}>No, Go Back</button>
+              <button onClick={() => setStep(3)} className="btn btn-primary" style={{flex:1}}>Yes, Continue</button>
+            </div>
           </div>
         )}
 
-        {/* STEP 3: INSURANCE (Updated with Local List) */}
+        {/* STEP 3: INSURANCE (Optional) */}
         {step === 3 && (
-          <div className="wizard-step">
-             <h2 style={{fontSize:'1.4rem', color:'white'}}>When is your Insurance due?</h2>
+          <div className="wizard-step fade-in">
+             <h2 style={{fontSize:'1.4rem', color:'white', marginBottom:'5px'}}>One last thing...</h2>
+             <p style={{color:'#9ca3af', marginBottom:'20px', fontSize:'0.9rem'}}>Add your insurance details to get reminders.</p>
              
-             <div style={{margin:'20px 0'}}>
-                <input 
-                  type="date" 
-                  style={{fontSize:'1.2rem', padding:'15px', background:'#232730', border:'1px solid var(--primary)', borderRadius:'12px', color:'white', width:'100%', textAlign:'center'}} 
-                  value={insuranceDate}
-                  onChange={e => setInsuranceDate(e.target.value)}
-                />
-             </div>
+             <label style={{fontSize:'0.85rem', fontWeight:'bold', color:'#d1d5db', display:'block', marginBottom:'8px'}}>Renewal Date</label>
+             <input 
+               type="date" 
+               style={{fontSize:'1rem', padding:'12px', background:'#1f2937', border:'1px solid var(--border)', borderRadius:'8px', color:'white', width:'100%', marginBottom:'20px'}} 
+               value={insuranceDate}
+               onChange={e => setInsuranceDate(e.target.value)}
+             />
 
-             <h3 style={{fontSize:'1.1rem', marginTop:'30px', textAlign:'left', color:'#9ca3af'}}>Who are you insured with?</h3>
+             <label style={{fontSize:'0.85rem', fontWeight:'bold', color:'#d1d5db', display:'block', marginBottom:'8px'}}>Provider</label>
              
-             {/* QUICK SELECT GRID (Only show if not searching) */}
+             {/* QUICK SELECT GRID */}
              {!searchTerm && (
-               <div className="insurer-grid">
+               <div className="insurer-grid" style={{marginBottom:'15px'}}>
                   {commonInsurers.map(ins => (
                     <div 
                       key={ins.name} 
@@ -585,24 +625,19 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
                </div>
              )}
 
-             {/* SEARCH BAR & LOCAL RESULTS */}
-             <div style={{position:'relative', marginTop:'15px'}}>
+             {/* SEARCH BAR */}
+             <div style={{position:'relative'}}>
                <input 
-                 placeholder="Search other providers (e.g. Sainsbury's)..." 
+                 placeholder="Search other providers..." 
                  value={searchTerm}
                  onChange={e => { setSearchTerm(e.target.value); setInsurer(null); }}
-                 style={{background:'#1f2937', border:'1px solid var(--border)', width:'100%', padding:'12px', borderRadius:'12px', color:'white'}}
+                 style={{background:'#1f2937', border:'1px solid var(--border)', width:'100%', padding:'12px', borderRadius:'8px', color:'white'}}
                />
                
-               {/* Search Results Dropdown */}
                {searchTerm.length >= 1 && searchResults.length > 0 && (
                  <div className="search-results">
                     {searchResults.map((res, i) => (
-                      <div 
-                        key={i} 
-                        className="search-item"
-                        onClick={() => handleSelectInsurer(res)}
-                      >
+                      <div key={i} className="search-item" onClick={() => handleSelectInsurer(res)}>
                          <img src={`https://img.logo.dev/${res.domain}?token=${LOGO_DEV_PK}&size=60&format=png`} alt="logo" onError={(e) => e.target.style.display='none'} />
                          <span>{res.name}</span>
                       </div>
@@ -611,8 +646,12 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
                )}
              </div>
 
-             <button onClick={saveVehicle} className="btn btn-primary btn-full" style={{marginTop:'25px'}}>
+             <button onClick={() => saveVehicle(false)} className="btn btn-primary btn-full" style={{marginTop:'25px'}}>
                Complete Setup
+             </button>
+             
+             <button onClick={() => saveVehicle(true)} className="btn-skip">
+               Skip for now
              </button>
           </div>
         )}
