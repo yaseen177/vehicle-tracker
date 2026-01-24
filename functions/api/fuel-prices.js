@@ -1,7 +1,7 @@
 export async function onRequest(context) {
     // --- PASTE YOUR GOOGLE SCRIPT URL HERE ---
     // Example: "https://script.google.com/macros/s/AKfycbx.../exec"
-    const GOOGLE_SCRIPT_TESCO_URL = "https://script.google.com/macros/s/AKfycbyZCoAWE5_MaiuQceNbkxMOPf5bpzCdhIndmDeqyKfWJRx2cmsuKxqhEllfgcZQX4AV-g/exec"; 
+    const GOOGLE_SCRIPT_TESCO_URL = "https://script.google.com/macros/s/AKfycbyZv8_regMNjljitUXhxt8tObXnEgiC-l0hJ4kWTkfngB42Ab1ZRDDR-ksss6FsF-l5EQ/exec"; 
     
     const SOURCES = [
       { name: "Ascona", url: "https://fuelprices.asconagroup.co.uk/newfuel.json" },

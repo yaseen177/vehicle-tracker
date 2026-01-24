@@ -253,7 +253,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                 position={{ lat: station.location.latitude, lng: station.location.longitude }}
                 onClick={() => setSelectedStation(station)}
                 // <--- FIXED: Corrected the broken URL string below
-                icon={`http://maps.google.com/mapfiles/ms/icons/${station.color === 'green' ? 'green' : station.color === 'orange' ? 'orange' : 'red'}-dot.png`}
+                icon={`https://maps.google.com/mapfiles/ms/icons/${station.color === 'green' ? 'green' : station.color === 'orange' ? 'orange' : 'red'}-dot.png`}
               />
             ))}
 
