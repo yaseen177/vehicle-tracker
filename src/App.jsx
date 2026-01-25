@@ -408,6 +408,7 @@ const EmptyState = ({ icon, title, desc, actionLabel, onAction }) => (
 );
 
 // 3. FLEET TIMELINE (Multi-car view)
+// 3. FLEET TIMELINE (Mobile Optimized)
 const FleetTimeline = ({ vehicles }) => {
   // Collect all upcoming dates
   const events = useMemo(() => {
@@ -415,7 +416,7 @@ const FleetTimeline = ({ vehicles }) => {
     vehicles.forEach(v => {
       if (v.motExpiry) list.push({ type: 'MOT', date: v.motExpiry, vehicle: v.registration, car: v.make });
       if (v.taxExpiry) list.push({ type: 'Tax', date: v.taxExpiry, vehicle: v.registration, car: v.make });
-      if (v.insuranceExpiry) list.push({ type: 'Insurance', date: v.insuranceExpiry, vehicle: v.registration, car: v.make });
+      if (v.insuranceExpiry) list.push({ type: 'Ins', date: v.insuranceExpiry, vehicle: v.registration, car: v.make });
     });
     // Sort by soonest
     return list.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -425,21 +426,32 @@ const FleetTimeline = ({ vehicles }) => {
 
   return (
     <div style={{marginBottom:'20px'}}>
-      <h3 style={{fontSize:'1rem', color:'#9ca3af', marginLeft:'5px', marginBottom:'10px'}}>Upcoming Fleet Timeline</h3>
+      <h3 style={{fontSize:'0.9rem', textTransform:'uppercase', letterSpacing:'1px', color:'#6b7280', marginLeft:'5px', marginBottom:'10px', fontWeight:'bold'}}>
+        Upcoming
+      </h3>
+      
       <div className="fleet-timeline-container">
         {events.map((ev, i) => {
            const days = Math.ceil((new Date(ev.date) - new Date()) / (86400000));
            const isUrgent = days < 30;
+           
            return (
-             <div key={i} className="timeline-event-card" style={{borderColor: isUrgent ? 'var(--warning)' : 'var(--border)'}}>
-                <div className={`event-badge ${ev.type === 'MOT' ? 'event-mot' : ev.type === 'Tax' ? 'event-tax' : 'event-ins'}`}>
-                   {ev.type}
+             <div key={i} className="timeline-event-card" style={{borderColor: isUrgent ? 'var(--warning)' : 'rgba(255,255,255,0.1)'}}>
+                {/* Badge */}
+                <div style={{alignSelf:'flex-start'}}>
+                   <span className={`event-badge ${ev.type === 'MOT' ? 'event-mot' : ev.type === 'Tax' ? 'event-tax' : 'event-ins'}`}>
+                      {ev.type}
+                   </span>
                 </div>
-                <div style={{fontSize:'0.95rem', fontWeight:'bold', color:'white', marginBottom:'2px'}}>
-                  {ev.car} <span style={{opacity:0.6}}>({ev.vehicle})</span>
-                </div>
-                <div style={{fontSize:'0.85rem', color: isUrgent ? '#fbbf24' : '#9ca3af'}}>
-                   {days < 0 ? 'Expired' : days === 0 ? 'Due Today' : `${days} days left`}
+
+                {/* Details */}
+                <div>
+                  <div className="timeline-car-name">
+                    {ev.car}
+                  </div>
+                  <div className="timeline-days" style={{color: isUrgent ? '#fbbf24' : '#9ca3af'}}>
+                     {days < 0 ? 'Expired' : days === 0 ? 'Due Today' : `${days} days`}
+                  </div>
                 </div>
              </div>
            )

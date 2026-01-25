@@ -734,25 +734,58 @@ input[type="date"] {
   border-radius: 4px;
 }
 
-/* --- FLEET TIMELINE --- */
+/* --- FLEET TIMELINE (Mobile Optimized) --- */
 .fleet-timeline-container {
-  overflow-x: auto;
-  padding-bottom: 20px;
-  margin-bottom: 30px;
-  white-space: nowrap;
-  -webkit-overflow-scrolling: touch; /* Smooth scroll on mobile */
+  display: flex;            /* Flexbox makes alignment easier */
+  gap: 12px;                /* Consistent gap between cards */
+  overflow-x: auto;         /* Allow horizontal scroll */
+  padding: 4px 4px 20px 4px;/* Space for shadows */
+  margin-bottom: 10px;
+  
+  /* The "Snapping" Magic */
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  
+  /* Hide the ugly scrollbar */
+  scrollbar-width: none; /* Firefox */
+}
+
+.fleet-timeline-container::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Edge */
 }
 
 .timeline-event-card {
-  display: inline-block;
-  vertical-align: top;
+  flex: 0 0 140px;          /* Fixed, smaller width (shows next card peeking) */
+  scroll-snap-align: start; /* Card snaps to left edge */
+  
   background: #1f2937;
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 16px;
-  margin-right: 12px;
-  width: 220px;
-  white-space: normal;
+  padding: 12px;
+  
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 100px;
+}
+
+.timeline-event-card:active {
+  transform: scale(0.98);   /* subtle press effect */
+}
+
+.timeline-car-name {
+  font-size: 0.85rem;
+  font-weight: bold;
+  color: white;
+  margin-top: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline-days {
+  font-size: 0.75rem;
+  margin-top: 2px;
 }
 
 .event-badge {
