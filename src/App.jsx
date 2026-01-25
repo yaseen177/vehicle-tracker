@@ -409,6 +409,7 @@ const EmptyState = ({ icon, title, desc, actionLabel, onAction }) => (
 
 // 3. FLEET TIMELINE (Multi-car view)
 // 3. FLEET TIMELINE (Mobile Optimized)
+// 3. FLEET TIMELINE (Mobile Optimized)
 const FleetTimeline = ({ vehicles }) => {
   // Collect all upcoming dates
   const events = useMemo(() => {
@@ -449,6 +450,11 @@ const FleetTimeline = ({ vehicles }) => {
                   <div className="timeline-car-name">
                     {ev.car}
                   </div>
+                  {/* NEW: Registration Number */}
+                  <div style={{fontSize:'0.75rem', color:'#9ca3af', marginBottom:'4px', fontWeight:'500'}}>
+                    {ev.vehicle}
+                  </div>
+
                   <div className="timeline-days" style={{color: isUrgent ? '#fbbf24' : '#9ca3af'}}>
                      {days < 0 ? 'Expired' : days === 0 ? 'Due Today' : `${days} days`}
                   </div>
