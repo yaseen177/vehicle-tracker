@@ -707,3 +707,95 @@ input[type="date"] {
   color: white;
   border-color: white;
 }
+
+/* --- SKELETON LOADING ANIMATION --- */
+.skeleton {
+  background: #1f2937;
+  background: linear-gradient(110deg, #1f2937 8%, #374151 18%, #1f2937 33%);
+  border-radius: 8px;
+  background-size: 200% 100%;
+  animation: 1.5s shine linear infinite;
+}
+
+@keyframes shine {
+  to {
+    background-position-x: -200%;
+  }
+}
+
+.skeleton-card {
+  height: 200px;
+  width: 100%;
+}
+
+.skeleton-text {
+  height: 20px;
+  margin-bottom: 10px;
+  border-radius: 4px;
+}
+
+/* --- FLEET TIMELINE --- */
+.fleet-timeline-container {
+  overflow-x: auto;
+  padding-bottom: 20px;
+  margin-bottom: 30px;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch; /* Smooth scroll on mobile */
+}
+
+.timeline-event-card {
+  display: inline-block;
+  vertical-align: top;
+  background: #1f2937;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-right: 12px;
+  width: 220px;
+  white-space: normal;
+}
+
+.event-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.event-mot { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+.event-tax { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+.event-ins { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+
+/* --- PREMIUM EMPTY STATE --- */
+.empty-state-premium {
+  text-align: center;
+  padding: 50px 20px;
+  background: rgba(255,255,255,0.03);
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  margin-top: 20px;
+}
+
+.empty-icon {
+  font-size: 4rem;
+  margin-bottom: 16px;
+  opacity: 0.8;
+  display: inline-block;
+}
+
+.empty-title {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: white;
+  margin-bottom: 8px;
+}
+
+.empty-desc {
+  color: #9ca3af;
+  font-size: 0.95rem;
+  max-width: 300px;
+  margin: 0 auto 24px auto;
+  line-height: 1.5;
+}

@@ -89,6 +89,7 @@ function MainApp() {
   const [myVehicles, setMyVehicles] = useState([]);
   const [activeVehicleId, setActiveVehicleId] = useState(null);
   const showToast = React.useContext(ToastContext);
+  const [loading, setLoading] = useState(true);
 
   // UI State
   const [showAddWizard, setShowAddWizard] = useState(false);
@@ -97,6 +98,7 @@ function MainApp() {
   useEffect(() => onAuthStateChanged(auth, u => {
     setUser(u);
     if (u) loadGarage(u.uid);
+    else setLoading(false);
   }), []);
 
   // --- HANDLE BROWSER "BACK" & SWIPE GESTURES ---
@@ -120,6 +122,7 @@ function MainApp() {
   const loadGarage = (uid) => {
     onSnapshot(collection(db, "users", uid, "vehicles"), (snap) => {
       setMyVehicles(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoading(false);
     });
   };
 
@@ -156,7 +159,15 @@ function MainApp() {
     window.history.pushState({ view: targetView }, '', `#${targetView}`);
   };
 
-  if (!user) return <LoginScreen onLogin={handleLogin} />;
+  if (!user && !loading) return <LoginScreen onLogin={handleLogin} />;
+
+  // 2. If we are still loading, show the Premium Skeleton Screens
+  if (loading) return (
+    <div className="fade-in" style={{padding:'20px'}}>
+      <SkeletonCard style={{height: '200px'}} />
+      <SkeletonCard style={{marginTop:'20px', height: '300px'}} />
+    </div>
+  );
 
   return (
     <div className="app-wrapper fade-in" style={{display:'flex', flexDirection:'column', minHeight:'100vh', position:'relative', overflowX:'hidden'}}>
@@ -230,6 +241,7 @@ function MainApp() {
         {view === 'garage' && (
           <GarageView 
             vehicles={myVehicles} 
+            loading={loading}
             onOpen={openVehicle} 
             onAddClick={() => setShowAddWizard(true)}
           />
@@ -376,27 +388,112 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-function GarageView({ vehicles, onOpen, onAddClick }) {
+// 1. SKELETON LOADER
+const SkeletonCard = ({ style }) => (
+  <div className="skeleton skeleton-card" style={{...style}}></div>
+);
+
+// 2. PREMIUM EMPTY STATE
+const EmptyState = ({ icon, title, desc, actionLabel, onAction }) => (
+  <div className="empty-state-premium fade-in">
+     <div className="empty-icon">{icon}</div>
+     <h3 className="empty-title">{title}</h3>
+     <p className="empty-desc">{desc}</p>
+     {actionLabel && (
+       <button onClick={onAction} className="btn btn-primary" style={{padding:'10px 30px'}}>
+         {actionLabel}
+       </button>
+     )}
+  </div>
+);
+
+// 3. FLEET TIMELINE (Multi-car view)
+const FleetTimeline = ({ vehicles }) => {
+  // Collect all upcoming dates
+  const events = useMemo(() => {
+    const list = [];
+    vehicles.forEach(v => {
+      if (v.motExpiry) list.push({ type: 'MOT', date: v.motExpiry, vehicle: v.registration, car: v.make });
+      if (v.taxExpiry) list.push({ type: 'Tax', date: v.taxExpiry, vehicle: v.registration, car: v.make });
+      if (v.insuranceExpiry) list.push({ type: 'Insurance', date: v.insuranceExpiry, vehicle: v.registration, car: v.make });
+    });
+    // Sort by soonest
+    return list.sort((a, b) => new Date(a.date) - new Date(b.date));
+  }, [vehicles]);
+
+  if (events.length === 0) return null;
+
+  return (
+    <div style={{marginBottom:'20px'}}>
+      <h3 style={{fontSize:'1rem', color:'#9ca3af', marginLeft:'5px', marginBottom:'10px'}}>Upcoming Fleet Timeline</h3>
+      <div className="fleet-timeline-container">
+        {events.map((ev, i) => {
+           const days = Math.ceil((new Date(ev.date) - new Date()) / (86400000));
+           const isUrgent = days < 30;
+           return (
+             <div key={i} className="timeline-event-card" style={{borderColor: isUrgent ? 'var(--warning)' : 'var(--border)'}}>
+                <div className={`event-badge ${ev.type === 'MOT' ? 'event-mot' : ev.type === 'Tax' ? 'event-tax' : 'event-ins'}`}>
+                   {ev.type}
+                </div>
+                <div style={{fontSize:'0.95rem', fontWeight:'bold', color:'white', marginBottom:'2px'}}>
+                  {ev.car} <span style={{opacity:0.6}}>({ev.vehicle})</span>
+                </div>
+                <div style={{fontSize:'0.85rem', color: isUrgent ? '#fbbf24' : '#9ca3af'}}>
+                   {days < 0 ? 'Expired' : days === 0 ? 'Due Today' : `${days} days left`}
+                </div>
+             </div>
+           )
+        })}
+      </div>
+    </div>
+  );
+};
+
+function GarageView({ vehicles, loading, onOpen, onAddClick }) {
+  // 1. Show Skeleton if loading
+  if (loading) return (
+    <div style={{padding:'20px'}}>
+      <SkeletonCard />
+      <SkeletonCard style={{marginTop:'20px'}} />
+    </div>
+  );
+
   return (
     <div className="fade-in">
-      <div className="bento-card" style={{marginBottom:'40px', textAlign:'center', padding:'40px 20px', background:'linear-gradient(180deg, var(--surface) 0%, var(--surface-highlight) 100%)'}}>
-        <h2>Track a New Vehicle</h2>
-        <p style={{marginBottom:'24px'}}>Add a car to check MOT, Tax, and manage history.</p>
-        <button onClick={onAddClick} className="btn btn-primary" style={{padding:'12px 40px', fontSize:'1.1rem'}}>+ Add Vehicle</button>
-      </div>
-      <div className="garage-grid">
-        {vehicles.map(car => (
-          <div key={car.id} onClick={() => onOpen(car.id)} className="garage-card">
-            <div className="plate-wrapper"><div className="car-plate">{car.registration}</div></div>
-            <h2 style={{marginTop:'10px'}}>{car.make}</h2>
-            <p>{car.model}</p>
-            <div style={{marginTop:'24px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
-               <Badge date={car.motExpiry} />
-               <div style={{color:'var(--primary)', fontSize:'0.9rem', fontWeight:'600'}}>Manage →</div>
-            </div>
+      {/* 2. FLEET TIMELINE (New Feature) */}
+      {vehicles.length > 0 && <FleetTimeline vehicles={vehicles} />}
+
+      {/* 3. Main Grid OR Premium Empty State */}
+      {vehicles.length === 0 ? (
+        <EmptyState 
+          icon="🚗" 
+          title="Your Garage is Empty" 
+          desc="Add your first vehicle to start tracking MOTs, Tax, and Service History." 
+          actionLabel="Add Vehicle"
+          onAction={onAddClick}
+        />
+      ) : (
+        <>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px', padding:'0 5px'}}>
+             <h2 style={{margin:0, fontSize:'1.2rem'}}>My Vehicles</h2>
+             <button onClick={onAddClick} className="btn btn-primary btn-sm">+ Add</button>
           </div>
-        ))}
-      </div>
+          <div className="garage-grid">
+            {/* ... (Existing card mapping logic remains the same) ... */}
+            {vehicles.map(car => (
+              <div key={car.id} onClick={() => onOpen(car.id)} className="garage-card">
+                <div className="plate-wrapper"><div className="car-plate">{car.registration}</div></div>
+                <h2 style={{marginTop:'10px'}}>{car.make}</h2>
+                <p>{car.model}</p>
+                <div style={{marginTop:'24px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+                   <Badge date={car.motExpiry} />
+                   <div style={{color:'var(--primary)', fontSize:'0.9rem', fontWeight:'600'}}>Manage →</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1672,11 +1769,6 @@ const Badge = ({ date }) => {
   return <span style={{color: color, fontWeight: 700, fontSize:'0.9rem'}}>{d < 0 ? 'Expired' : `${d} days left`}</span>;
 };
 
-const EmptyState = ({ text }) => (
-  <div style={{textAlign:'center', padding:'40px', color:'var(--text-muted)', border:'1px dashed var(--border)', borderRadius:'12px'}}>
-    {text}
-  </div>
-);
 
 // Updated ProfileView - NOW INCLUDES 'onSignOut' in the top list
 function ProfileView({ user, showToast, onBack, onSignOut }) {
