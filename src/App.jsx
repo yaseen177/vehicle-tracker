@@ -505,6 +505,7 @@ function GarageView({ vehicles, loading, onOpen, onAddClick }) {
                 <p>{car.model}</p>
                 <div style={{marginTop:'24px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
                    <Badge date={car.motExpiry} />
+                   <TaxBadge status={car.taxStatus} date={car.taxExpiry} />
                    <div style={{color:'var(--primary)', fontSize:'0.9rem', fontWeight:'600'}}>Manage →</div>
                 </div>
               </div>
@@ -618,6 +619,7 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
       taxExpiry: vehicleData.taxDueDate || "",
       motTests: vehicleData.motTests || [], 
       motExpiry: vehicleData.motTests && vehicleData.motTests.length > 0 ? vehicleData.motTests[0].expiryDate : "",
+      taxStatus: vehicleData.taxStatus || "Unknown",
       
       // Insurance Data
       insuranceExpiry: finalInsuranceDate,
@@ -1361,7 +1363,13 @@ return (
        </div>
        
        {/* DATES & EDITORS (Unchanged) */}
-       <div style={{borderTop: '1px solid var(--border)', paddingTop: '10px'}}>
+       <div style={{borderTop:'1px solid var(--border)', paddingTop:'10px', marginTop:'10px'}}>
+    <div style={{marginBottom:'10px'}}>
+       <div style={{fontSize:'0.75rem', color:'#9ca3af', marginBottom:'4px'}}>Vehicle Status</div>
+       <div style={{display:'flex', gap:'8px'}}>
+          <TaxBadge status={vehicle.taxStatus} date={vehicle.taxExpiry} />
+       </div>
+    </div>
          <EditableDateRow 
            label="MOT Expiry" 
            value={vehicle.motExpiry} 

@@ -14,8 +14,8 @@ export async function onRequestPost({ request, env }) {
     // 1. GET KEYS
     const CLIENT_ID = env.DVSA_CLIENT_ID;
     const CLIENT_SECRET = env.DVSA_CLIENT_SECRET;
-    const MOT_API_KEY = env.DVSA_API_KEY; // Renamed for clarity
-    const VES_API_KEY = env.VES_API_KEY;  // NEW: DVLA Tax API Key
+    const MOT_API_KEY = env.DVSA_API_KEY; 
+    const VES_API_KEY = env.VES_API_KEY;  
     
     // URL Constants
     const TOKEN_URL = "https://login.microsoftonline.com/a455b827-244f-4c97-b5b4-ce5d13b4d00c/oauth2/v2.0/token";
@@ -53,7 +53,6 @@ export async function onRequestPost({ request, env }) {
     }
 
     // 3. PARALLEL FETCH (Get MOT and Tax data at the same time)
-    // We use Promise.allSettled so if one fails (e.g. car has no MOT yet), the other still loads.
     const [motResult, taxResult] = await Promise.allSettled([
       // A. Fetch MOT History
       fetch(`${MOT_URL}/${registration}`, {
@@ -85,18 +84,16 @@ export async function onRequestPost({ request, env }) {
     const motData = motResult.status === 'fulfilled' ? motResult.value : null;
     const taxData = taxResult.status === 'fulfilled' ? taxResult.value : null;
 
-    // If both failed, the car doesn't exist
     if (!motData && !taxData) {
         return new Response(JSON.stringify({ error: "Vehicle not found" }), { status: 404 });
     }
 
     // 5. MERGE DATA
-    // We prioritize DVLA (Tax) data for specs because it is the "Official V5C" record.
     const mergedVehicle = {
       registration: taxData?.registrationNumber || motData?.registration || registration,
       
       make: taxData?.make || motData?.make || "Unknown",
-      model: motData?.model || "Unknown", // DVLA often omits model name, MOT is better here
+      model: motData?.model || "Unknown", 
       
       primaryColour: taxData?.colour || motData?.primaryColour,
       fuelType: taxData?.fuelType || motData?.fuelType,
@@ -105,10 +102,11 @@ export async function onRequestPost({ request, env }) {
       manufactureDate: taxData?.yearOfManufacture || motData?.manufactureDate,
       firstUsedDate: taxData?.monthOfFirstRegistration || motData?.firstUsedDate,
       
-      // *** THE NEW FIELD ***
-      taxDueDate: taxData?.taxDueDate || "", // Format: YYYY-MM-DD
+      // *** TAX & SORN STATUS ***
+      taxStatus: taxData?.taxStatus || "Unknown", // <--- NEW FIELD ADDED HERE
+      taxDueDate: taxData?.taxDueDate || "",      
       
-      // MOT History (If pass/fail/advisories exist)
+      // MOT History
       motTests: motData?.motTests || []
     };
 
