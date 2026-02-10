@@ -102,8 +102,8 @@ export async function onRequestPost({ request, env }) {
       manufactureDate: taxData?.yearOfManufacture || motData?.manufactureDate,
       firstUsedDate: taxData?.monthOfFirstRegistration || motData?.firstUsedDate,
       
-      // *** TAX & SORN STATUS ***
-      taxStatus: taxData?.taxStatus || "Unknown", // <--- NEW FIELD ADDED HERE
+      // *** NEW TAX FIELDS ***
+      taxStatus: taxData?.taxStatus || "Unknown", // <--- ADD THIS LINE
       taxDueDate: taxData?.taxDueDate || "",      
       
       // MOT History

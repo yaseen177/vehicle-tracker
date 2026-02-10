@@ -78,6 +78,47 @@ function ToastProvider({ children }) {
   );
 }
 
+
+// --- NEW: REFRESH ALL VEHICLES ---
+const [isGlobalRefreshing, setIsGlobalRefreshing] = useState(false);
+
+const refreshAllVehicles = async () => {
+  if (!window.confirm("Update Tax & MOT data for all vehicles? This may take a moment.")) return;
+  
+  setIsGlobalRefreshing(true);
+  let updatedCount = 0;
+
+  showToast("Starting update...", "success");
+
+  for (const v of myVehicles) {
+    try {
+      const res = await fetch("/api/vehicle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registration: v.registration })
+      });
+      
+      if (!res.ok) continue;
+      const data = await res.json();
+      
+      // Update Firestore with NEW fields
+      await updateDoc(doc(db, "users", user.uid, "vehicles", v.id), {
+        taxStatus: data.taxStatus || "Unknown", // The new field
+        taxExpiry: data.taxDueDate || "",
+        motExpiry: data.motExpiry || "",
+        motTests: data.motTests || [],
+        lastRefreshed: new Date().toISOString()
+      });
+      updatedCount++;
+    } catch (err) {
+      console.error("Failed to update", v.registration, err);
+    }
+  }
+  
+  setIsGlobalRefreshing(false);
+  showToast(`Success! Updated ${updatedCount} vehicles.`);
+};
+
 function App() {
   return <ToastProvider><MainApp /></ToastProvider>;
 }
@@ -94,6 +135,39 @@ function MainApp() {
   // UI State
   const [showAddWizard, setShowAddWizard] = useState(false);
   const [isMenuOpen, setMenuOpen] = useState(false); // NEW: Menu State
+
+  // 1. Define the Refresh Function
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  const handleRefreshAll = async () => {
+    if(!window.confirm("Refresh data for all vehicles?")) return;
+    setIsRefreshing(true);
+    let count = 0;
+    
+    for (const v of myVehicles) {
+       try {
+         const res = await fetch("/api/vehicle", {
+            method: "POST", 
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ registration: v.registration })
+         });
+         const data = await res.json();
+         if(data.error) continue;
+
+         // Update Firestore
+         await updateDoc(doc(db, "users", user.uid, "vehicles", v.id), {
+            taxStatus: data.taxStatus || "Unknown",
+            taxExpiry: data.taxDueDate || "",
+            motExpiry: data.motExpiry || "",
+            motTests: data.motTests || [],
+            lastRefreshed: new Date().toISOString()
+         });
+         count++;
+       } catch(e) { console.error(e); }
+    }
+    setIsRefreshing(false);
+    showToast(`Updated ${count} vehicles`);
+  };
 
   useEffect(() => onAuthStateChanged(auth, u => {
     setUser(u);
@@ -244,6 +318,8 @@ function MainApp() {
             loading={loading}
             onOpen={openVehicle} 
             onAddClick={() => setShowAddWizard(true)}
+            onRefreshAll={refreshAllVehicles}
+            isRefreshing={isGlobalRefreshing}
           />
         )}
 
@@ -467,21 +543,14 @@ const FleetTimeline = ({ vehicles }) => {
   );
 };
 
-function GarageView({ vehicles, loading, onOpen, onAddClick }) {
-  // 1. Show Skeleton if loading
-  if (loading) return (
-    <div style={{padding:'20px'}}>
-      <SkeletonCard />
-      <SkeletonCard style={{marginTop:'20px'}} />
-    </div>
-  );
-
+// Update arguments to accept onRefreshAll and isRefreshing
+function GarageView({ vehicles, onOpen, onAddClick, onRefreshAll, isRefreshing }) {
   return (
     <div className="fade-in">
-      {/* 2. FLEET TIMELINE (New Feature) */}
+      {/* 2. FLEET TIMELINE */}
       {vehicles.length > 0 && <FleetTimeline vehicles={vehicles} />}
 
-      {/* 3. Main Grid OR Premium Empty State */}
+      {/* 3. Main Grid OR Empty State */}
       {vehicles.length === 0 ? (
         <EmptyState 
           icon="🚗" 
@@ -492,20 +561,36 @@ function GarageView({ vehicles, loading, onOpen, onAddClick }) {
         />
       ) : (
         <>
+          {/* HEADER ROW WITH SYNC BUTTON */}
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px', padding:'0 5px'}}>
              <h2 style={{margin:0, fontSize:'1.2rem'}}>My Vehicles</h2>
-             <button onClick={onAddClick} className="btn btn-primary btn-sm">+ Add</button>
+             
+             <div style={{display:'flex', gap:'8px'}}>
+                <button 
+                  onClick={onRefreshAll} 
+                  disabled={isRefreshing} 
+                  className="btn btn-secondary btn-sm"
+                  style={{fontSize:'0.85rem', padding:'6px 12px', display:'flex', alignItems:'center', gap:'6px'}}
+                >
+                  {isRefreshing ? <div className="spinner" style={{width:12, height:12, borderWidth:2}}></div> : "🔄 Sync"}
+                </button>
+                
+                <button onClick={onAddClick} className="btn btn-primary btn-sm">+ Add</button>
+             </div>
           </div>
+
           <div className="garage-grid">
-            {/* ... (Existing card mapping logic remains the same) ... */}
             {vehicles.map(car => (
               <div key={car.id} onClick={() => onOpen(car.id)} className="garage-card">
                 <div className="plate-wrapper"><div className="car-plate">{car.registration}</div></div>
                 <h2 style={{marginTop:'10px'}}>{car.make}</h2>
                 <p>{car.model}</p>
                 <div style={{marginTop:'24px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
-                   <Badge date={car.motExpiry} />
-                   <TaxBadge status={car.taxStatus} date={car.taxExpiry} />
+                   <div style={{display:'flex', flexDirection:'column', gap:'6px'}}>
+                      <Badge date={car.motExpiry} />
+                      {/* Ensure TaxBadge is defined in your file! */}
+                      {typeof TaxBadge !== 'undefined' && <TaxBadge status={car.taxStatus} date={car.taxExpiry} />}
+                   </div>
                    <div style={{color:'var(--primary)', fontSize:'0.9rem', fontWeight:'600'}}>Manage →</div>
                 </div>
               </div>
