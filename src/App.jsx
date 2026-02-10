@@ -79,46 +79,6 @@ function ToastProvider({ children }) {
 }
 
 
-// --- NEW: REFRESH ALL VEHICLES ---
-const [isGlobalRefreshing, setIsGlobalRefreshing] = useState(false);
-
-const refreshAllVehicles = async () => {
-  if (!window.confirm("Update Tax & MOT data for all vehicles? This may take a moment.")) return;
-  
-  setIsGlobalRefreshing(true);
-  let updatedCount = 0;
-
-  showToast("Starting update...", "success");
-
-  for (const v of myVehicles) {
-    try {
-      const res = await fetch("/api/vehicle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ registration: v.registration })
-      });
-      
-      if (!res.ok) continue;
-      const data = await res.json();
-      
-      // Update Firestore with NEW fields
-      await updateDoc(doc(db, "users", user.uid, "vehicles", v.id), {
-        taxStatus: data.taxStatus || "Unknown", // The new field
-        taxExpiry: data.taxDueDate || "",
-        motExpiry: data.motExpiry || "",
-        motTests: data.motTests || [],
-        lastRefreshed: new Date().toISOString()
-      });
-      updatedCount++;
-    } catch (err) {
-      console.error("Failed to update", v.registration, err);
-    }
-  }
-  
-  setIsGlobalRefreshing(false);
-  showToast(`Success! Updated ${updatedCount} vehicles.`);
-};
-
 function App() {
   return <ToastProvider><MainApp /></ToastProvider>;
 }
