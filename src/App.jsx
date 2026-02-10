@@ -130,20 +130,23 @@ function MainApp() {
   const [myVehicles, setMyVehicles] = useState([]);
   const [activeVehicleId, setActiveVehicleId] = useState(null);
   const showToast = React.useContext(ToastContext);
+  
+  // Loading & Refresh State
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false); // <--- FIXED NAME
 
   // UI State
   const [showAddWizard, setShowAddWizard] = useState(false);
-  const [isMenuOpen, setMenuOpen] = useState(false); // NEW: Menu State
+  const [isMenuOpen, setMenuOpen] = useState(false);
 
-  // 1. Define the Refresh Function
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  
+  // --- 1. REFRESH FUNCTION ---
   const handleRefreshAll = async () => {
     if(!window.confirm("Refresh data for all vehicles?")) return;
     setIsRefreshing(true);
     let count = 0;
     
+    showToast("Syncing data...", "success");
+
     for (const v of myVehicles) {
        try {
          const res = await fetch("/api/vehicle", {
@@ -169,13 +172,14 @@ function MainApp() {
     showToast(`Updated ${count} vehicles`);
   };
 
+  // --- 2. AUTH & LOAD EFFECTS ---
   useEffect(() => onAuthStateChanged(auth, u => {
     setUser(u);
     if (u) loadGarage(u.uid);
     else setLoading(false);
   }), []);
 
-  // --- HANDLE BROWSER "BACK" & SWIPE GESTURES ---
+  // --- 3. BROWSER NAVIGATION ---
   useEffect(() => {
     const handlePopState = (event) => {
       if (view === 'dashboard') {
@@ -224,18 +228,16 @@ function MainApp() {
     window.history.pushState({ view: 'dashboard' }, '', '#dashboard');
   };
 
-  // --- MENU NAVIGATION HANDLER ---
   const handleNav = (targetView) => {
     setMenuOpen(false);
     if (targetView === 'garage') setActiveVehicleId(null);
     setView(targetView);
-    // Push state so back button works for these views too
     window.history.pushState({ view: targetView }, '', `#${targetView}`);
   };
 
   if (!user && !loading) return <LoginScreen onLogin={handleLogin} />;
 
-  // 2. If we are still loading, show the Premium Skeleton Screens
+  // LOADING STATE
   if (loading) return (
     <div className="fade-in" style={{padding:'20px'}}>
       <SkeletonCard style={{height: '200px'}} />
@@ -289,18 +291,13 @@ function MainApp() {
 
       {/* 3. HEADER */}
       <header className="top-nav">
-        {/* Left Side: Logo/Back */}
         <div className="logo" onClick={() => handleNav('garage')} style={{cursor:'pointer'}}>
            {view === 'dashboard' ? (
              <span style={{display:'flex', alignItems:'center', gap:'8px'}} onClick={(e) => { e.stopPropagation(); window.history.back(); }}>
                <span style={{fontSize:'1.2rem'}}>←</span> Back
              </span>
-           ) : (
-             "My Garage"
-           )}
+           ) : "My Garage"}
         </div>
-
-        {/* Right Side: Menu Button */}
         <button 
           onClick={() => setMenuOpen(true)} 
           className="btn btn-secondary" 
@@ -318,8 +315,8 @@ function MainApp() {
             loading={loading}
             onOpen={openVehicle} 
             onAddClick={() => setShowAddWizard(true)}
-            onRefreshAll={refreshAllVehicles}
-            isRefreshing={isGlobalRefreshing}
+            onRefreshAll={handleRefreshAll} // <--- CORRECTED PROP NAME
+            isRefreshing={isRefreshing}     // <--- CORRECTED PROP NAME
           />
         )}
 
@@ -348,12 +345,10 @@ function MainApp() {
           />
         )}
 
-        {/* NEW: HELP VIEW */}
         {view === 'help' && <HelpView onBack={() => handleNav('garage')} />}
-
       </div>
 
-      {/* 5. FOOTER (Hidden in Map View to save space) */}
+      {/* 5. FOOTER */}
       {view !== 'fuel' && (
         <footer style={{
           textAlign: 'center', 
@@ -369,7 +364,6 @@ function MainApp() {
           </p>
         </footer>
       )}
-
     </div>
   );
 }
