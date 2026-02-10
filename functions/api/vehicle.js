@@ -102,9 +102,12 @@ export async function onRequestPost({ request, env }) {
       manufactureDate: taxData?.yearOfManufacture || motData?.manufactureDate,
       firstUsedDate: taxData?.monthOfFirstRegistration || motData?.firstUsedDate,
       
-      // *** NEW TAX FIELDS ***
-      taxStatus: taxData?.taxStatus || "Unknown", // <--- ADD THIS LINE
+      // *** TAX & MOT STATUS ***
+      taxStatus: taxData?.taxStatus || "Unknown",
       taxDueDate: taxData?.taxDueDate || "",      
+      
+      // ADD THIS LINE (The Official MOT Expiry from DVLA):
+      motExpiry: taxData?.motExpiryDate || "", 
       
       // MOT History
       motTests: motData?.motTests || []

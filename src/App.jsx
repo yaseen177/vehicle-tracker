@@ -657,7 +657,7 @@ const AddVehicleWizard = ({ user, onClose, onComplete }) => {
       manufactureDate: vehicleData.manufactureDate,
       taxExpiry: vehicleData.taxDueDate || "",
       motTests: vehicleData.motTests || [], 
-      motExpiry: vehicleData.motTests && vehicleData.motTests.length > 0 ? vehicleData.motTests[0].expiryDate : "",
+      motExpiry: vehicleData.motExpiry || "",
       taxStatus: vehicleData.taxStatus || "Unknown",
       
       // Insurance Data
