@@ -1785,6 +1785,36 @@ const StatusDot = ({ date }) => {
   return <span className={`status-dot ${color}`}></span>;
 };
 
+// --- ADD THIS AT THE BOTTOM OF App.jsx ---
+
+const TaxBadge = ({ status, date }) => {
+  if (!status) return null;
+  const isTaxed = status?.toLowerCase() === 'taxed';
+  const isSorn = status?.toLowerCase().includes('sorn');
+  
+  // Format Date (e.g., "1 Nov 2025")
+  const formattedDate = date ? new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+
+  return (
+    <div style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      padding: '4px 8px',
+      borderRadius: '6px',
+      fontSize: '0.75rem',
+      fontWeight: 'bold',
+      background: isTaxed ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+      color: isTaxed ? '#34d399' : '#f87171',
+      border: `1px solid ${isTaxed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
+    }}>
+      <span style={{marginRight: '6px'}}>
+        {isTaxed ? 'Taxed' : isSorn ? 'SORN' : 'Untaxed'}
+      </span>
+      {isTaxed && date && <span style={{opacity: 0.8, fontWeight: 'normal'}}>Expires {formattedDate}</span>}
+    </div>
+  );
+};
+
 const formatDate = (s) => s ? new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
 const daysLeft = (s) => s ? Math.ceil((new Date(s) - new Date()) / (86400000)) : null;
 
