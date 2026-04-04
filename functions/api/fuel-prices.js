@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Fix: Smart Token Path Resolution & WAF Bypass
+   Fix: True API Domain + WAF Bypass
 */
 
 // GLOBAL CACHE
@@ -20,8 +20,8 @@ export async function onRequest(context) {
     }
 
     const cache = caches.default;
-    // Cache bust to v10
-    const cacheKey = new Request("https://fuel-prices-gov-api-v10");
+    // Cache bust to v11
+    const cacheKey = new Request("https://fuel-prices-gov-api-v11");
     let response = await cache.match(cacheKey);
 
     if (response) {
@@ -35,8 +35,11 @@ export async function onRequest(context) {
         "Connection": "keep-alive"
     };
 
+    // THE TRUE API DOMAIN
+    const API_DOMAIN = "https://api.fuelfinder.service.gov.uk";
+
     try {
-        // 1. FETCH OAUTH TOKEN (Information Recipient Flow)
+        // 1. FETCH OAUTH TOKEN
         const now = Date.now();
         if (!cachedToken || now >= tokenExpiry) {
             
@@ -44,14 +47,14 @@ export async function onRequest(context) {
             tokenBody.append("grant_type", "client_credentials");
             tokenBody.append("client_id", CLIENT_ID);
             tokenBody.append("client_secret", CLIENT_SECRET);
-            tokenBody.append("scope", "fuelfinder.read"); // Required for read access
+            tokenBody.append("scope", "fuelfinder.read"); 
 
-            // The docs don't specify the exact path, so we try the standard ones securely
+            // Because the docs are ambiguous on the path, we test the standard variations on the true API domain
             const tokenPaths = [
-                "https://www.fuel-finder.service.gov.uk/oauth2/token",
-                "https://www.fuel-finder.service.gov.uk/api/oauth2/token",
-                "https://www.fuel-finder.service.gov.uk/api/v1/oauth2/token",
-                "https://www.fuel-finder.service.gov.uk/token"
+                `${API_DOMAIN}/oauth2/token`,
+                `${API_DOMAIN}/v1/oauth2/token`,
+                `${API_DOMAIN}/api/v1/oauth2/token`,
+                `${API_DOMAIN}/v1/token`
             ];
 
             let tokenRes = null;
@@ -67,16 +70,15 @@ export async function onRequest(context) {
                     body: tokenBody
                 });
                 
-                if (tokenRes.ok) break; // We found the right endpoint!
+                if (tokenRes.ok) break; 
                 lastErrorText = await tokenRes.text();
             }
 
             if (!tokenRes || !tokenRes.ok) {
-                throw new Error(`Auth Failed on all paths. Last error (${tokenRes?.status}): ${lastErrorText}`);
+                throw new Error(`Auth Failed on API server. Last error (${tokenRes?.status}): ${lastErrorText}`);
             }
 
             const tokenData = await tokenRes.json();
-            
             const token = tokenData.access_token;
             const expiresIn = tokenData.expires_in || 3600;
 
@@ -97,13 +99,28 @@ export async function onRequest(context) {
                 }
             };
 
+            // Notice: The docs showed /v1/prices in one place and /api/v1/pfs in another.
+            // We use the standard /v1/pfs as it matches the REST architecture on api. subdomains.
             const [pfsRes, pricesRes] = await Promise.all([
-                fetch(`https://www.fuel-finder.service.gov.uk/api/v1/pfs?batch-number=${batchNumber}`, fetchOptions),
-                fetch(`https://www.fuel-finder.service.gov.uk/api/v1/pfs/fuel-prices?batch-number=${batchNumber}`, fetchOptions)
+                fetch(`${API_DOMAIN}/v1/pfs?batch-number=${batchNumber}`, fetchOptions),
+                fetch(`${API_DOMAIN}/v1/pfs/fuel-prices?batch-number=${batchNumber}`, fetchOptions)
             ]);
 
-            const pfsData = pfsRes.ok ? await pfsRes.json() : [];
-            const pricesData = pricesRes.ok ? await pricesRes.json() : [];
+            // If the /v1/pfs path 404s, it means the API gateway wants /api/v1/pfs
+            let finalPfsRes = pfsRes;
+            let finalPricesRes = pricesRes;
+
+            if (pfsRes.status === 404) {
+                const [retryPfs, retryPrices] = await Promise.all([
+                    fetch(`${API_DOMAIN}/api/v1/pfs?batch-number=${batchNumber}`, fetchOptions),
+                    fetch(`${API_DOMAIN}/api/v1/pfs/fuel-prices?batch-number=${batchNumber}`, fetchOptions)
+                ]);
+                finalPfsRes = retryPfs;
+                finalPricesRes = retryPrices;
+            }
+
+            const pfsData = finalPfsRes.ok ? await finalPfsRes.json() : [];
+            const pricesData = finalPricesRes.ok ? await finalPricesRes.json() : [];
 
             return { pfsData, pricesData };
         };
