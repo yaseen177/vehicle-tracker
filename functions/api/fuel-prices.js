@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Working Auth Loop + Fixed Address & Brand Names
+   Working Auth Loop + Aggressive Address Hunter
 */
 
 // GLOBAL CACHE
@@ -20,8 +20,8 @@ export async function onRequest(context) {
     }
 
     const cache = caches.default;
-    // Cache bust to v17 for the final polish
-    const cacheKey = new Request("https://fuel-prices-gov-api-v17");
+    // Cache bust to v18 for the Address Hunter
+    const cacheKey = new Request("https://fuel-prices-gov-api-v18");
     let response = await cache.match(cacheKey);
 
     if (response) {
@@ -36,7 +36,7 @@ export async function onRequest(context) {
     };
 
     try {
-        // 1. OAUTH TOKEN HUNTER (The version that successfully connects)
+        // 1. OAUTH TOKEN HUNTER
         const now = Date.now();
         if (!cachedToken || now >= tokenExpiry) {
             
@@ -154,7 +154,7 @@ export async function onRequest(context) {
             return rawName.toLowerCase().replace(/\b\w/g, s => s.toUpperCase());
         };
 
-        // 4. FORMAT WITH FIXED ADDRESS & BRAND PRIORITISATION
+        // 4. FORMAT
         const mappedStations = allLocations.map(station => {
             const sid = station.node_id || station.id;
             const stationPricesArray = allPrices[sid] || [];
@@ -167,24 +167,49 @@ export async function onRequest(context) {
 
             const lat = station.location?.latitude || station.location?.lat || station.latitude || 0;
             const lng = station.location?.longitude || station.location?.lng || station.longitude || 0;
-            
-            // FIX 1: Prioritise the true brand name over the franchisee trading name
             const rawBrand = station.brand_name || station.trading_name || "Unknown";
 
-            // FIX 2: Safely parse the address whether it is a string or an object
+            // --- THE NEW AGGRESSIVE ADDRESS HUNTER ---
             let cleanAddress = "Unknown Address";
+            
+            // 1. Is it a direct string?
             if (typeof station.address === 'string' && station.address.trim() !== '') {
                 cleanAddress = station.address;
-            } else if (typeof station.address === 'object' && station.address !== null) {
+            } 
+            // 2. Is it a nested address object?
+            else if (typeof station.address === 'object' && station.address !== null) {
                 const addressParts = [
-                    station.address.line_1 || station.address.address_line_1,
+                    station.address.line_1 || station.address.address_line_1 || station.address.street,
                     station.address.town || station.address.post_town || station.address.city
                 ].filter(Boolean);
-                
-                if (addressParts.length > 0) {
-                    cleanAddress = addressParts.join(", ");
+                if (addressParts.length > 0) cleanAddress = addressParts.join(", ");
+            }
+            // 3. Are the address fields flattened on the main station object?
+            else if (station.address_line_1 || station.address_line1 || station.town || station.city) {
+                const addressParts = [
+                    station.address_line_1 || station.address_line1 || station.address_line_2,
+                    station.town || station.post_town || station.city
+                ].filter(Boolean);
+                if (addressParts.length > 0) cleanAddress = addressParts.join(", ");
+            }
+            // 4. Are the address fields hidden inside the location object?
+            else if (station.location && typeof station.location === 'object') {
+                if (typeof station.location.address === 'string' && station.location.address.trim() !== '') {
+                    cleanAddress = station.location.address;
+                } else if (station.location.address_line_1 || station.location.town || station.location.city) {
+                    const addressParts = [
+                        station.location.address_line_1 || station.location.street,
+                        station.location.town || station.location.city
+                    ].filter(Boolean);
+                    if (addressParts.length > 0) cleanAddress = addressParts.join(", ");
                 }
             }
+
+            // Fallback: If we STILL can't find an address, but we have a postcode, show the postcode
+            if (cleanAddress === "Unknown Address" && station.postcode) {
+                cleanAddress = station.postcode;
+            }
+            // -----------------------------------------
 
             return {
                 site_id: sid || Math.random().toString(36).substr(2, 9),
