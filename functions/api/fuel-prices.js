@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Working Auth Loop + Aggressive Address Hunter + Price Normalisation
+   Working Auth Loop + Aggressive Address Hunter + Price Normalisation + Fast Chunking
 */
 
 // GLOBAL CACHE
@@ -13,22 +13,16 @@ export async function onRequest(context) {
     const CLIENT_SECRET = env.FUEL_CLIENT_SECRET;
 
     if (!CLIENT_ID || !CLIENT_SECRET) {
-      return new Response(JSON.stringify({ error: "Missing API credentials." }), { 
-        status: 500,
-        headers: { "Access-Control-Allow-Origin": "*" }
-      });
+      return new Response(JSON.stringify({ error: "Missing API credentials." }), { status: 500, headers: { "Access-Control-Allow-Origin": "*" } });
     }
 
     const cache = caches.default;
-    // Cache bust to v19 for Price Normalisation
-    const cacheKey = new Request("https://fuel-prices-gov-api-v19");
+    // Cache bust to v20 for Fast Chunking
+    const cacheKey = new Request("https://fuel-prices-gov-api-v20");
     let response = await cache.match(cacheKey);
 
-    if (response) {
-      return response;
-    }
+    if (response) return response;
 
-    // FIREWALL BYPASS HEADERS
     const COMMON_HEADERS = {
         "User-Agent": "VehicleTrackerAPIClient/1.0",
         "Accept": "application/json",
@@ -39,19 +33,13 @@ export async function onRequest(context) {
         // 1. OAUTH TOKEN HUNTER
         const now = Date.now();
         if (!cachedToken || now >= tokenExpiry) {
-            
             const formBody = new URLSearchParams();
             formBody.append("grant_type", "client_credentials");
             formBody.append("client_id", CLIENT_ID);
             formBody.append("client_secret", CLIENT_SECRET);
             formBody.append("scope", "fuelfinder.read"); 
 
-            const jsonBody = JSON.stringify({
-                client_id: CLIENT_ID,
-                client_secret: CLIENT_SECRET,
-                grant_type: "client_credentials",
-                scope: "fuelfinder.read"
-            });
+            const jsonBody = JSON.stringify({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET, grant_type: "client_credentials", scope: "fuelfinder.read" });
 
             const endpointsToTest = [
                 { url: "https://www.fuel-finder.service.gov.uk/api/v1/oauth/token", type: "form" },
@@ -71,16 +59,12 @@ export async function onRequest(context) {
                     const isForm = ep.type === "form";
                     const res = await fetch(ep.url, {
                         method: "POST",
-                        headers: { 
-                            ...COMMON_HEADERS, 
-                            "Content-Type": isForm ? "application/x-www-form-urlencoded" : "application/json" 
-                        },
+                        headers: { ...COMMON_HEADERS, "Content-Type": isForm ? "application/x-www-form-urlencoded" : "application/json" },
                         body: isForm ? formBody : jsonBody
                     });
                     
                     if (res.ok) {
-                        tokenRes = res;
-                        break; 
+                        tokenRes = res; break; 
                     } else {
                         let text = await res.text();
                         if (text.includes("<!DOCTYPE html>")) text = "404 Next.js HTML Page"; 
@@ -91,9 +75,7 @@ export async function onRequest(context) {
                 }
             }
 
-            if (!tokenRes || !tokenRes.ok) {
-                throw new Error(JSON.stringify(diagnostics, null, 2));
-            }
+            if (!tokenRes || !tokenRes.ok) throw new Error(JSON.stringify(diagnostics, null, 2));
 
             const tokenData = await tokenRes.json();
             const token = tokenData.access_token || tokenData.data?.access_token;
@@ -105,32 +87,45 @@ export async function onRequest(context) {
             tokenExpiry = now + (expiresIn - 60) * 1000;
         }
 
-        // 2. FETCH ALL UK DATA
+        // 2. FETCH ALL UK DATA (CHUNKED PARALLEL FETCHING FOR SPEED)
         const allLocations = [];
         const allPrices = {};
         
-        for (let batch = 1; batch <= 20; batch++) {
-            const fetchOptions = {
-                headers: { ...COMMON_HEADERS, "Authorization": `Bearer ${cachedToken}` }
-            };
+        const batches = Array.from({length: 20}, (_, i) => i + 1);
+        const chunkSize = 3; // Fetch 3 batches at once to drastically cut the 30s load time down to ~8s
 
-            const [pfsRes, pricesRes] = await Promise.all([
-                fetch(`https://www.fuel-finder.service.gov.uk/api/v1/pfs?batch-number=${batch}`, fetchOptions),
-                fetch(`https://www.fuel-finder.service.gov.uk/api/v1/pfs/fuel-prices?batch-number=${batch}`, fetchOptions)
-            ]);
+        for (let i = 0; i < batches.length; i += chunkSize) {
+            const chunk = batches.slice(i, i + chunkSize);
+            
+            const chunkPromises = chunk.map(async (batch) => {
+                const fetchOptions = { headers: { ...COMMON_HEADERS, "Authorization": `Bearer ${cachedToken}` } };
+                const [pfsRes, pricesRes] = await Promise.all([
+                    fetch(`https://www.fuel-finder.service.gov.uk/api/v1/pfs?batch-number=${batch}`, fetchOptions),
+                    fetch(`https://www.fuel-finder.service.gov.uk/api/v1/pfs/fuel-prices?batch-number=${batch}`, fetchOptions)
+                ]);
 
-            if (!pfsRes.ok || !pricesRes.ok) break;
+                if (!pfsRes.ok || !pricesRes.ok) return null;
 
-            const pfsData = await pfsRes.json();
-            const pricesData = await pricesRes.json();
+                const pfsData = await pfsRes.json();
+                const pricesData = await pricesRes.json();
 
-            const locs = Array.isArray(pfsData) ? pfsData : (pfsData.data || []);
-            const prices = Array.isArray(pricesData) ? pricesData : (pricesData.data || []);
+                return {
+                    locs: Array.isArray(pfsData) ? pfsData : (pfsData.data || []),
+                    prices: Array.isArray(pricesData) ? pricesData : (pricesData.data || [])
+                };
+            });
 
-            if (locs.length === 0) break;
+            const results = await Promise.all(chunkPromises);
 
-            allLocations.push(...locs);
-            prices.forEach(p => { if (p.node_id) allPrices[p.node_id] = p.fuel_prices || []; });
+            let hitEnd = false;
+            for (const res of results) {
+                if (!res) continue;
+                if (res.locs.length === 0) hitEnd = true;
+                allLocations.push(...res.locs);
+                res.prices.forEach(p => { if (p.node_id) allPrices[p.node_id] = p.fuel_prices || []; });
+            }
+
+            if (hitEnd) break;
         }
 
         // 3. BRAND CLEANING
@@ -154,15 +149,10 @@ export async function onRequest(context) {
             return rawName.toLowerCase().replace(/\b\w/g, s => s.toUpperCase());
         };
 
-        // --- THE NEW PRICE NORMALISATION HELPER ---
         const formatPrice = (rawPrice) => {
             if (!rawPrice || rawPrice <= 0) return null;
             let price = parseFloat(rawPrice);
-            // If the price is under 10, it was submitted in Pounds (£1.54) instead of Pence (154p). 
-            if (price < 10) {
-                price = price * 100;
-            }
-            // Round nicely to 1 decimal place (e.g., 154.9) and keep it as a number
+            if (price < 10) price = price * 100;
             return parseFloat(price.toFixed(1));
         };
 
@@ -181,9 +171,7 @@ export async function onRequest(context) {
             const lng = station.location?.longitude || station.location?.lng || station.longitude || 0;
             const rawBrand = station.brand_name || station.trading_name || "Unknown";
 
-            // Address Hunter
             let cleanAddress = "Unknown Address";
-            
             if (typeof station.address === 'string' && station.address.trim() !== '') {
                 cleanAddress = station.address;
             } else if (typeof station.address === 'object' && station.address !== null) {

@@ -3,7 +3,6 @@ import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-map
 
 const containerStyle = { width: '100%', height: '45vh', minHeight: '300px' };
 
-// --- HELPER: Haversine Distance (Miles) ---
 const getDistance = (lat1, lon1, lat2, lon2) => {
   const R = 3958.8; 
   const dLat = (lat2 - lat1) * (Math.PI / 180);
@@ -15,7 +14,6 @@ const getDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-// --- HELPER: Brand Domain for Logos ---
 const getBrandDomain = (brand) => {
   if (!brand) return 'fuel.com';
   const b = brand.toLowerCase().replace(/['\s]/g, '');
@@ -29,7 +27,6 @@ const getBrandDomain = (brand) => {
   return overrides[b] || `${b}.com`;
 };
 
-// --- MAP STYLES ---
 const mapStyles = [
   { elementType: "geometry", stylers: [{ color: "#f5f5f5" }] },
   { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
@@ -42,32 +39,40 @@ const mapStyles = [
 export default function FuelView({ googleMapsApiKey, logoKey }) {
   const mapRef = useRef(null);
   
-  // State
   const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStation, setSelectedStation] = useState(null);
   
-  // Map State (Used for Filtering)
+  // NEW: State to hold the timestamp
+  const [lastUpdated, setLastUpdated] = useState(null); 
+  
   const [mapBounds, setMapBounds] = useState(null);
-  const [mapCenter, setMapCenter] = useState({ lat: 51.5074, lng: -0.1278 }); // London default
+  const [mapCenter, setMapCenter] = useState({ lat: 51.5074, lng: -0.1278 }); 
 
-  // Search & Filters
   const [postcodeQuery, setPostcodeQuery] = useState("");
-  const [fuelType, setFuelType] = useState('E10'); // 'E10' (Unleaded) or 'B7' (Diesel)
+  const [fuelType, setFuelType] = useState('E10'); 
 
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: googleMapsApiKey
   });
 
-  // 1. Fetch Data
   useEffect(() => {
     async function fetchData() {
       try {
-        // FIXED: Added a cache-buster (?t=...) to force the browser to get the new government data
         const res = await fetch(`/api/fuel-prices?t=${new Date().getTime()}`); 
         const data = await res.json();
+        
         setStations(data.stations || []);
+        
+        // NEW: Grab the timestamp from the JSON and format it nicely for the UK
+        if (data.updated) {
+            const dateObj = new Date(data.updated);
+            setLastUpdated(dateObj.toLocaleString('en-GB', { 
+                weekday: 'short', hour: '2-digit', minute: '2-digit' 
+            }));
+        }
+        
         setLoading(false);
       } catch (err) {
         console.error("Failed to load fuel data", err);
@@ -76,7 +81,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     }
     fetchData();
     
-    // Try to get user location once on load
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (p) => setMapCenter({ lat: p.coords.latitude, lng: p.coords.longitude }),
@@ -85,20 +89,15 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     }
   }, []);
 
-  // 2. Handle Map Movements (Zoom/Pan)
   const onMapIdle = useCallback(() => {
     if (mapRef.current) {
-      // Get the visible boundaries of the map
       const bounds = mapRef.current.getBounds();
       setMapBounds(bounds);
-      
-      // Get the center of the screen (for distance calc)
       const center = mapRef.current.getCenter();
       setMapCenter({ lat: center.lat(), lng: center.lng() });
     }
   }, []);
 
-  // 3. Search Postcode
   const handleSearch = () => {
     if (!postcodeQuery || !window.google || !mapRef.current) return;
     const geocoder = new window.google.maps.Geocoder();
@@ -106,32 +105,27 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       if (status === 'OK' && results[0]) {
         const loc = results[0].geometry.location;
         mapRef.current.panTo(loc);
-        mapRef.current.setZoom(14); // Zoom in closer
+        mapRef.current.setZoom(14); 
       } else {
         alert("Postcode not found!");
       }
     });
   };
 
-  // 4. Smart Filter (Based on Visible Map Area)
   const visibleStations = useMemo(() => {
     if (!stations.length || !mapBounds) return [];
     
-    // Filter: Only keep stations inside the current map view AND that sell the selected fuel
     const local = stations.filter(s => {
-      if (!s.prices || !s.prices[fuelType]) return false; // Skip if they don't sell this fuel
+      if (!s.prices || !s.prices[fuelType]) return false; 
       const stationLoc = new window.google.maps.LatLng(s.location.latitude, s.location.longitude);
       return mapBounds.contains(stationLoc);
     });
 
     if (local.length > 0) {
-      // Calculate Average Price in this area for Traffic Lights
       const avgPrice = local.reduce((acc, s) => acc + s.prices[fuelType], 0) / local.length;
       
-      // Add Distance & Color
       const processed = local.map(s => {
         const price = s.prices[fuelType];
-        // Distance from the CENTER of your screen
         const dist = getDistance(mapCenter.lat, mapCenter.lng, s.location.latitude, s.location.longitude);
         
         let color = "red";
@@ -141,7 +135,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         return { ...s, color, distance: dist };
       });
 
-      // Sort by Cheapest Price
       return processed.sort((a, b) => a.prices[fuelType] - b.prices[fuelType]);
     }
     return [];
@@ -152,13 +145,11 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   return (
     <div className="fade-in" style={{height:'100%', display:'flex', flexDirection:'column', overflow:'hidden'}}>
       
-      {/* Hide default close button style */}
       <style>{` .gm-ui-hover-effect { display: none !important; } `}</style>
 
       {/* --- CONTROLS --- */}
       <div className="bento-card" style={{margin:'0 0 10px 0', padding:'12px', display:'flex', flexDirection:'column', gap:'12px'}}>
         
-        {/* Search Row */}
         <div style={{display:'flex', gap:'8px'}}>
           <input 
             placeholder="Search location..." 
@@ -170,10 +161,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
           <button onClick={handleSearch} className="btn btn-primary">🔍</button>
         </div>
 
-        {/* Filters Row */}
         <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
            
-           {/* Fuel Toggle */}
            <div style={{display:'flex', background:'rgba(255,255,255,0.1)', borderRadius:'8px', padding:'2px'}}>
               <button 
                 onClick={() => setFuelType('E10')}
@@ -193,9 +182,12 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
               >Diesel</button>
            </div>
            
-           <div style={{fontSize:'0.8rem', color:'#9ca3af', fontStyle:'italic'}}>
-             {visibleStations.length} stations in view
+           {/* NEW: Displaying the Last Updated Timestamp */}
+           <div style={{fontSize:'0.75rem', color:'#9ca3af', fontStyle:'italic', display: 'flex', flexDirection: 'column', alignItems: 'flex-end'}}>
+             <span>{visibleStations.length} stations in view</span>
+             {lastUpdated && <span style={{fontSize: '0.7rem', opacity: 0.8}}>Updated: {lastUpdated}</span>}
            </div>
+
         </div>
       </div>
 
@@ -206,7 +198,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
           center={mapCenter}
           zoom={13}
           onLoad={map => mapRef.current = map}
-          onIdle={onMapIdle} // <--- Triggers filter when user stops moving map
+          onIdle={onMapIdle} 
           options={{
             styles: mapStyles,
             disableDefaultUI: true,
@@ -214,16 +206,14 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             gestureHandling: "cooperative"
           }}
         >
-          {/* FIXED: My Location Pin */}
           <Marker position={mapCenter} icon="https://maps.google.com/mapfiles/ms/icons/blue-dot.png" />
           
-          {/* FIXED: Dynamic Pin Colors */}
           {visibleStations.map((station, i) => (
             <Marker
               key={i}
               position={{ lat: station.location.latitude, lng: station.location.longitude }}
               onClick={() => setSelectedStation(station)}
-              icon={`https://maps.google.com/mapfiles/ms/icons/${station.color}-dot.png`}
+              icon={`https://maps.google.com/mapfiles/ms/icons/$${station.color === 'green' ? 'green' : station.color === 'orange' ? 'orange' : 'red'}-dot.png`}
             />
           ))}
 
