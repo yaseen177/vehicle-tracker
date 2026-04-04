@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Working Auth Loop + Aggressive Address Hunter
+   Working Auth Loop + Aggressive Address Hunter + Price Normalisation
 */
 
 // GLOBAL CACHE
@@ -20,8 +20,8 @@ export async function onRequest(context) {
     }
 
     const cache = caches.default;
-    // Cache bust to v18 for the Address Hunter
-    const cacheKey = new Request("https://fuel-prices-gov-api-v18");
+    // Cache bust to v19 for Price Normalisation
+    const cacheKey = new Request("https://fuel-prices-gov-api-v19");
     let response = await cache.match(cacheKey);
 
     if (response) {
@@ -154,6 +154,18 @@ export async function onRequest(context) {
             return rawName.toLowerCase().replace(/\b\w/g, s => s.toUpperCase());
         };
 
+        // --- THE NEW PRICE NORMALISATION HELPER ---
+        const formatPrice = (rawPrice) => {
+            if (!rawPrice || rawPrice <= 0) return null;
+            let price = parseFloat(rawPrice);
+            // If the price is under 10, it was submitted in Pounds (£1.54) instead of Pence (154p). 
+            if (price < 10) {
+                price = price * 100;
+            }
+            // Round nicely to 1 decimal place (e.g., 154.9) and keep it as a number
+            return parseFloat(price.toFixed(1));
+        };
+
         // 4. FORMAT
         const mappedStations = allLocations.map(station => {
             const sid = station.node_id || station.id;
@@ -161,39 +173,32 @@ export async function onRequest(context) {
             let e10 = null, b7 = null;
 
             stationPricesArray.forEach(fp => {
-                if (fp.fuel_type === 'E10' || fp.fuel_type === 'E10_STANDARD' || fp.fuel_type === 'E5') e10 = fp.price;
-                if (fp.fuel_type === 'B7' || fp.fuel_type === 'B7_STANDARD') b7 = fp.price;
+                if (fp.fuel_type === 'E10' || fp.fuel_type === 'E10_STANDARD' || fp.fuel_type === 'E5') e10 = formatPrice(fp.price);
+                if (fp.fuel_type === 'B7' || fp.fuel_type === 'B7_STANDARD') b7 = formatPrice(fp.price);
             });
 
             const lat = station.location?.latitude || station.location?.lat || station.latitude || 0;
             const lng = station.location?.longitude || station.location?.lng || station.longitude || 0;
             const rawBrand = station.brand_name || station.trading_name || "Unknown";
 
-            // --- THE NEW AGGRESSIVE ADDRESS HUNTER ---
+            // Address Hunter
             let cleanAddress = "Unknown Address";
             
-            // 1. Is it a direct string?
             if (typeof station.address === 'string' && station.address.trim() !== '') {
                 cleanAddress = station.address;
-            } 
-            // 2. Is it a nested address object?
-            else if (typeof station.address === 'object' && station.address !== null) {
+            } else if (typeof station.address === 'object' && station.address !== null) {
                 const addressParts = [
                     station.address.line_1 || station.address.address_line_1 || station.address.street,
                     station.address.town || station.address.post_town || station.address.city
                 ].filter(Boolean);
                 if (addressParts.length > 0) cleanAddress = addressParts.join(", ");
-            }
-            // 3. Are the address fields flattened on the main station object?
-            else if (station.address_line_1 || station.address_line1 || station.town || station.city) {
+            } else if (station.address_line_1 || station.address_line1 || station.town || station.city) {
                 const addressParts = [
                     station.address_line_1 || station.address_line1 || station.address_line_2,
                     station.town || station.post_town || station.city
                 ].filter(Boolean);
                 if (addressParts.length > 0) cleanAddress = addressParts.join(", ");
-            }
-            // 4. Are the address fields hidden inside the location object?
-            else if (station.location && typeof station.location === 'object') {
+            } else if (station.location && typeof station.location === 'object') {
                 if (typeof station.location.address === 'string' && station.location.address.trim() !== '') {
                     cleanAddress = station.location.address;
                 } else if (station.location.address_line_1 || station.location.town || station.location.city) {
@@ -205,11 +210,9 @@ export async function onRequest(context) {
                 }
             }
 
-            // Fallback: If we STILL can't find an address, but we have a postcode, show the postcode
             if (cleanAddress === "Unknown Address" && station.postcode) {
                 cleanAddress = station.postcode;
             }
-            // -----------------------------------------
 
             return {
                 site_id: sid || Math.random().toString(36).substr(2, 9),
