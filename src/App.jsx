@@ -86,6 +86,7 @@ function App() {
 function MainApp() {
   const LOGO_DEV_PK = import.meta.env.VITE_LOGO_DEV_PK;
   const [user, setUser] = useState(null);
+  const hasPromptedForFuel = useRef(false);
   const [view, setView] = useState("garage");
   const [myVehicles, setMyVehicles] = useState([]);
   const [activeVehicleId, setActiveVehicleId] = useState(null);
@@ -194,6 +195,19 @@ function MainApp() {
     setView(targetView);
     window.history.pushState({ view: targetView }, '', `#${targetView}`);
   };
+
+  // --- NEW: Fuel Prices Popup on Load/Refresh ---
+  useEffect(() => {
+    if (user && !hasPromptedForFuel.current) {
+      hasPromptedForFuel.current = true;
+      
+      setTimeout(() => {
+        if (window.confirm("Would you like to check the latest fuel prices?")) {
+          handleNav('fuel');
+        }
+      }, 500); // 500ms delay for a smoother user experience
+    }
+  }, [user]);
 
   if (!user && !loading) return <LoginScreen onLogin={handleLogin} />;
 
@@ -1991,15 +2005,16 @@ function LoginScreen({ onLogin }) {
       </nav>
 
       {/* Hero Section */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', textAlign: 'center' }}>
+      {/* UPDATE: Reduced padding from '80px 20px' to '40px 20px' */}
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', textAlign: 'center' }}>
         
         <div style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', padding: '6px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '24px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
           ✨ Your Complete Digital Glovebox
         </div>
         
-        <h1 style={{ fontSize: 'clamp(2.5rem, 5vw, 4.5rem)', fontWeight: '900', maxWidth: '800px', lineHeight: '1.1', margin: '0 0 24px 0', letterSpacing: '-1px' }}>
-          Manage your vehicles. <br />
-          <span style={{ background: 'linear-gradient(to right, #3b82f6, #8b5cf6)', WebkitBackgroundClip: 'text', color: 'transparent' }}>
+        {/* UPDATE: Adjusted clamp() for smaller screens and removed the hardcoded <br /> */}
+        <h1 style={{ fontSize: 'clamp(2rem, 8vw, 4.5rem)', fontWeight: '900', maxWidth: '800px', lineHeight: '1.1', margin: '0 0 24px 0', letterSpacing: '-1px' }}>
+          Manage your vehicles. <span style={{ background: 'linear-gradient(to right, #3b82f6, #8b5cf6)', WebkitBackgroundClip: 'text', color: 'transparent' }}>
             All in one place.
           </span>
         </h1>
@@ -2018,7 +2033,8 @@ function LoginScreen({ onLogin }) {
         </button>
 
         {/* Feature Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', maxWidth: '1000px', width: '100%', marginTop: '80px' }}>
+        {/* UPDATE: Changed marginTop from 80px to a fluid clamp(40px, 8vw, 80px) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', maxWidth: '1000px', width: '100%', marginTop: 'clamp(40px, 8vw, 80px)' }}>
           <FeatureCard icon="🔔" title="Smart Reminders" desc="Automated SMS alerts before your MOT, Tax, or Insurance expires." />
           <FeatureCard icon="⛽" title="Live Fuel Prices" desc="Compare real-time Unleaded and Diesel prices at 8,000+ UK forecourts." />
           <FeatureCard icon="📑" title="Digital History" desc="Upload receipts and instantly generate a PDF sale bundle for buyers." />
