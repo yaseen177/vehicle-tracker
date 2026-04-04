@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Working Auth Loop + Address Hunter + Price Normalisation + Individual Timestamps
+   Working Auth + Address Hunter + Price Normalisation + RAW DEBUG OUTPUT
 */
 
 // GLOBAL CACHE
@@ -17,8 +17,8 @@ export async function onRequest(context) {
     }
 
     const cache = caches.default;
-    // Cache bust to v21 for individual timestamps
-    const cacheKey = new Request("https://fuel-prices-gov-api-v21");
+    // Cache bust to v22
+    const cacheKey = new Request("https://fuel-prices-gov-api-v22");
     let response = await cache.match(cacheKey);
 
     if (response) return response;
@@ -63,19 +63,11 @@ export async function onRequest(context) {
                         body: isForm ? formBody : jsonBody
                     });
                     
-                    if (res.ok) {
-                        tokenRes = res; break; 
-                    } else {
-                        let text = await res.text();
-                        if (text.includes("<!DOCTYPE html>")) text = "404 Next.js HTML Page"; 
-                        diagnostics[`${ep.type.toUpperCase()}: ${ep.url}`] = `HTTP ${res.status} - ${text.substring(0, 100)}`;
-                    }
-                } catch (networkError) {
-                    diagnostics[`${ep.type.toUpperCase()}: ${ep.url}`] = `Network Error: ${networkError.message}`;
-                }
+                    if (res.ok) { tokenRes = res; break; }
+                } catch (e) {}
             }
 
-            if (!tokenRes || !tokenRes.ok) throw new Error(JSON.stringify(diagnostics, null, 2));
+            if (!tokenRes || !tokenRes.ok) throw new Error("Auth Failed on all paths.");
 
             const tokenData = await tokenRes.json();
             const token = tokenData.access_token || tokenData.data?.access_token;
@@ -87,7 +79,7 @@ export async function onRequest(context) {
             tokenExpiry = now + (expiresIn - 60) * 1000;
         }
 
-        // 2. FETCH ALL UK DATA (CHUNKED)
+        // 2. FETCH ALL UK DATA
         const allLocations = [];
         const allPrices = {};
         
@@ -128,14 +120,6 @@ export async function onRequest(context) {
             if (hitEnd) break;
         }
 
-        // --- THE DIAGNOSTIC LOG ---
-        // This prints the very first station to your Cloudflare Logs so we can inspect the exact variable names
-        if (allLocations.length > 0) {
-            const sampleId = allLocations[0].node_id || allLocations[0].id;
-            console.log("🔍 RAW STATION SAMPLE:", JSON.stringify(allLocations[0], null, 2));
-            console.log("🔍 RAW PRICE SAMPLE:", JSON.stringify(allPrices[sampleId] || [], null, 2));
-        }
-
         // 3. CLEANING HELPERS
         const cleanBrandName = (rawName) => {
             if (!rawName) return "Unknown";
@@ -170,17 +154,14 @@ export async function onRequest(context) {
             const stationPricesArray = allPrices[sid] || [];
             let e10 = null, b7 = null;
 
-            // Smart Sniffer: Check the main station object for a generic timestamp
             let stationTimestamp = station.last_updated || station.updated_at || station.timestamp || station.effective_date || null;
 
             stationPricesArray.forEach(fp => {
                 if (fp.fuel_type === 'E10' || fp.fuel_type === 'E10_STANDARD' || fp.fuel_type === 'E5') e10 = formatPrice(fp.price);
                 if (fp.fuel_type === 'B7' || fp.fuel_type === 'B7_STANDARD') b7 = formatPrice(fp.price);
 
-                // Smart Sniffer: Check the individual price object for a timestamp
                 const fpTime = fp.last_updated || fp.updated_at || fp.timestamp || fp.effective_date || null;
                 if (fpTime) {
-                    // Keep the absolute most recent timestamp we find
                     if (!stationTimestamp || new Date(fpTime) > new Date(stationTimestamp)) {
                         stationTimestamp = fpTime;
                     }
@@ -229,23 +210,25 @@ export async function onRequest(context) {
                 postcode: station.postcode || "",
                 location: { latitude: lat, longitude: lng },
                 prices: { E10: e10, B7: b7 },
-                last_updated: stationTimestamp // <-- Sending the specific station time to frontend
+                last_updated: stationTimestamp
             };
         }).filter(s => (s.prices.E10 || s.prices.B7) && s.location.latitude !== 0);
 
         const uniqueStations = Array.from(new Map(mappedStations.map(s => [s.site_id, s])).values());
 
-        // 5. SEND RESPONSE
+        // 5. SEND RESPONSE WITH DEBUG SAMPLE
+        const sampleId = allLocations.length > 0 ? (allLocations[0].node_id || allLocations[0].id) : null;
+        
         const json = JSON.stringify({ 
-          updated: new Date().toISOString(), 
-          count: uniqueStations.length, 
-          stations: uniqueStations,
-          // ADD THIS LINE:
-          debug_sample: allLocations.length > 0 ? { 
-              station: allLocations[0], 
-              prices: allPrices[allLocations[0].node_id || allLocations[0].id] 
-          } : null
-      });
+            updated: new Date().toISOString(), 
+            count: uniqueStations.length, 
+            stations: uniqueStations,
+            // THIS IS THE RAW DATA WE NEED TO LOOK AT:
+            debug_sample: allLocations.length > 0 ? {
+                raw_station_data: allLocations[0],
+                raw_price_data: allPrices[sampleId] || []
+            } : null
+        });
 
         response = new Response(json, { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=1800" } });
         context.waitUntil(cache.put(cacheKey, response.clone()));
