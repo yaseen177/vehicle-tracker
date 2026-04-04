@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Fix: Fail-Safe Auth Loop & Brand Cleaning
+   Diagnostic Token Hunter & WAF Bypass
 */
 
 // GLOBAL CACHE
@@ -20,8 +20,8 @@ export async function onRequest(context) {
     }
 
     const cache = caches.default;
-    // Cache bust to v14
-    const cacheKey = new Request("https://fuel-prices-gov-api-v14");
+    // Cache bust to v15
+    const cacheKey = new Request("https://fuel-prices-gov-api-v15");
     let response = await cache.match(cacheKey);
 
     if (response) {
@@ -36,51 +36,69 @@ export async function onRequest(context) {
     };
 
     try {
-        // 1. FETCH OAUTH TOKEN
+        // 1. DIAGNOSTIC TOKEN HUNTER
         const now = Date.now();
         if (!cachedToken || now >= tokenExpiry) {
-            const tokenBody = new URLSearchParams();
-            tokenBody.append("grant_type", "client_credentials");
-            tokenBody.append("client_id", CLIENT_ID);
-            tokenBody.append("client_secret", CLIENT_SECRET);
-            tokenBody.append("scope", "fuelfinder.read"); 
+            
+            // The Form Encoded Payload
+            const formBody = new URLSearchParams();
+            formBody.append("grant_type", "client_credentials");
+            formBody.append("client_id", CLIENT_ID);
+            formBody.append("client_secret", CLIENT_SECRET);
+            formBody.append("scope", "fuelfinder.read"); 
 
-            // We only use domains we 100% know exist on the government network
-            const tokenPaths = [
-                "https://api.fuelfinder.service.gov.uk/oauth2/token",
-                "https://api.fuelfinder.service.gov.uk/v1/oauth/token",
-                "https://www.fuel-finder.service.gov.uk/api/v1/oauth/token",
-                "https://www.fuel-finder.service.gov.uk/oauth2/token"
+            // The JSON Payload
+            const jsonBody = JSON.stringify({
+                client_id: CLIENT_ID,
+                client_secret: CLIENT_SECRET,
+                grant_type: "client_credentials",
+                scope: "fuelfinder.read"
+            });
+
+            // The list of all plausible UK Gov API Gateway paths
+            const endpointsToTest = [
+                { url: "https://www.fuel-finder.service.gov.uk/api/v1/oauth/token", type: "form" },
+                { url: "https://www.fuel-finder.service.gov.uk/api/v1/token", type: "form" },
+                { url: "https://www.fuel-finder.service.gov.uk/api/oauth2/token", type: "form" },
+                { url: "https://www.fuel-finder.service.gov.uk/api/v1/oauth/generate_access_token", type: "json" },
+                { url: "https://www.fuel-finder.service.gov.uk/api/v1/oauth/generate_secret_token", type: "json" },
+                { url: "https://www.fuel-finder.service.gov.uk/api/v1/oauth/generate_secret_token", type: "form" },
+                { url: "https://identity.fuel-finder.service.gov.uk/oauth2/token", type: "form" }
             ];
 
             let tokenRes = null;
-            let lastErrorText = "";
+            let diagnostics = {}; // We will record all failures here
 
-            // Fail-Safe Loop: If a URL causes a DNS error, it catches it and moves on.
-            for (const path of tokenPaths) {
+            for (const ep of endpointsToTest) {
                 try {
-                    const res = await fetch(path, {
+                    const isForm = ep.type === "form";
+                    const res = await fetch(ep.url, {
                         method: "POST",
-                        headers: { ...COMMON_HEADERS, "Content-Type": "application/x-www-form-urlencoded" },
-                        body: tokenBody
+                        headers: { 
+                            ...COMMON_HEADERS, 
+                            "Content-Type": isForm ? "application/x-www-form-urlencoded" : "application/json" 
+                        },
+                        body: isForm ? formBody : jsonBody
                     });
                     
                     if (res.ok) {
                         tokenRes = res;
-                        break; 
+                        break; // We found the working endpoint!
                     } else {
-                        // It connected, but rejected the password or path
-                        lastErrorText = `HTTP ${res.status}: ` + await res.text();
+                        // Record the failure so we can analyze it
+                        let text = await res.text();
+                        // Truncate HTML to save space
+                        if (text.includes("<!DOCTYPE html>")) text = "404 Next.js HTML Page"; 
+                        diagnostics[`${ep.type.toUpperCase()}: ${ep.url}`] = `HTTP ${res.status} - ${text.substring(0, 100)}`;
                     }
                 } catch (networkError) {
-                    // It failed to connect entirely (e.g. 1016 DNS error)
-                    lastErrorText = `Network Error on ${path}: ${networkError.message}`;
-                    console.warn(lastErrorText);
+                    diagnostics[`${ep.type.toUpperCase()}: ${ep.url}`] = `Network Error: ${networkError.message}`;
                 }
             }
 
             if (!tokenRes || !tokenRes.ok) {
-                throw new Error(`Auth Failed on all paths. Last error: ${lastErrorText}`);
+                // If everything failed, print the entire diagnostic map to the screen!
+                throw new Error(JSON.stringify(diagnostics, null, 2));
             }
 
             const tokenData = await tokenRes.json();
@@ -93,11 +111,10 @@ export async function onRequest(context) {
             tokenExpiry = now + (expiresIn - 60) * 1000;
         }
 
-        // 2. FETCH ALL UK DATA (Using the known working data URLs)
+        // 2. FETCH ALL UK DATA
         const allLocations = [];
         const allPrices = {};
         
-        // Loop up to 20 batches to get Costco and all other stations
         for (let batch = 1; batch <= 20; batch++) {
             const fetchOptions = {
                 headers: { ...COMMON_HEADERS, "Authorization": `Bearer ${cachedToken}` }
@@ -108,10 +125,7 @@ export async function onRequest(context) {
                 fetch(`https://www.fuel-finder.service.gov.uk/api/v1/pfs/fuel-prices?batch-number=${batch}`, fetchOptions)
             ]);
 
-            if (!pfsRes.ok || !pricesRes.ok) {
-                console.warn(`Stopped fetching at batch ${batch} due to non-200 status.`);
-                break;
-            }
+            if (!pfsRes.ok || !pricesRes.ok) break;
 
             const pfsData = await pfsRes.json();
             const pricesData = await pricesRes.json();
@@ -119,20 +133,16 @@ export async function onRequest(context) {
             const locs = Array.isArray(pfsData) ? pfsData : (pfsData.data || []);
             const prices = Array.isArray(pricesData) ? pricesData : (pricesData.data || []);
 
-            // If we receive an empty array, we've pulled the entire country
             if (locs.length === 0) break;
 
             allLocations.push(...locs);
-            prices.forEach(p => {
-                if (p.node_id) allPrices[p.node_id] = p.fuel_prices || [];
-            });
+            prices.forEach(p => { if (p.node_id) allPrices[p.node_id] = p.fuel_prices || []; });
         }
 
-        // 3. BRAND CLEANING HELPER (For Logos)
+        // 3. BRAND CLEANING
         const cleanBrandName = (rawName) => {
             if (!rawName) return "Unknown";
             const name = rawName.toUpperCase();
-            
             if (name.includes("TESCO")) return "Tesco";
             if (name.includes("SAINSBURY")) return "Sainsburys";
             if (name.includes("ASDA")) return "Asda";
@@ -147,17 +157,14 @@ export async function onRequest(context) {
             if (name.includes("COSTCO")) return "Costco";
             if (name.includes("MURCO")) return "Murco";
             if (name.includes("CO-OP") || name.includes("COOP")) return "Co-op";
-            
             return rawName.toLowerCase().replace(/\b\w/g, s => s.toUpperCase());
         };
 
-        // 4. FORMAT FOR FRONTEND
+        // 4. FORMAT
         const mappedStations = allLocations.map(station => {
             const sid = station.node_id || station.id;
             const stationPricesArray = allPrices[sid] || [];
-            
-            let e10 = null;
-            let b7 = null;
+            let e10 = null, b7 = null;
 
             stationPricesArray.forEach(fp => {
                 if (fp.fuel_type === 'E10' || fp.fuel_type === 'E10_STANDARD' || fp.fuel_type === 'E5') e10 = fp.price;
@@ -166,7 +173,6 @@ export async function onRequest(context) {
 
             const lat = station.location?.latitude || station.location?.lat || station.latitude || 0;
             const lng = station.location?.longitude || station.location?.lng || station.longitude || 0;
-
             const rawBrand = station.trading_name || station.brand_name || "Unknown";
 
             return {
@@ -183,26 +189,14 @@ export async function onRequest(context) {
 
         // 5. SEND RESPONSE
         const json = JSON.stringify({ 
-            updated: new Date().toISOString(),
-            count: uniqueStations.length,
-            stations: uniqueStations 
+            updated: new Date().toISOString(), count: uniqueStations.length, stations: uniqueStations 
         });
 
-        response = new Response(json, {
-            headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*", 
-                "Cache-Control": "public, max-age=1800"
-            }
-        });
-
+        response = new Response(json, { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=1800" } });
         context.waitUntil(cache.put(cacheKey, response.clone()));
         return response;
 
     } catch (err) {
-        return new Response(JSON.stringify({ error: err.message }), { 
-            status: 500,
-            headers: { "Access-Control-Allow-Origin": "*" }
-        });
+        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { "Access-Control-Allow-Origin": "*" } });
     }
 }
