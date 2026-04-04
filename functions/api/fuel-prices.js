@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Fix: Added User-Agent headers to bypass AWS CloudFront WAF
+   Fix: AWS WAF Bot-Control Bypass
 */
 
 // GLOBAL CACHE
@@ -20,18 +20,20 @@ export async function onRequest(context) {
     }
 
     const cache = caches.default;
-    // Cache bust to v8
-    const cacheKey = new Request("https://fuel-prices-gov-api-v8");
+    // Cache bust to v9
+    const cacheKey = new Request("https://fuel-prices-gov-api-v9");
     let response = await cache.match(cacheKey);
 
     if (response) {
       return response;
     }
 
-    // THE FIX: Standard Browser User-Agent to pass CloudFront Firewall
+    // THE FIX: Do not pretend to be Chrome. AWS WAF blocks "browsers" coming from data centres.
+    // Instead, declare an honest programmatic client, which is standard for API traffic.
     const COMMON_HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json"
+        "User-Agent": "VehicleTrackerAPIClient/1.0",
+        "Accept": "application/json",
+        "Connection": "keep-alive"
     };
 
     try {
@@ -39,33 +41,20 @@ export async function onRequest(context) {
         const now = Date.now();
         if (!cachedToken || now >= tokenExpiry) {
             
-            const tokenBody = new URLSearchParams();
-            tokenBody.append("grant_type", "client_credentials");
-            tokenBody.append("client_id", CLIENT_ID);
-            tokenBody.append("client_secret", CLIENT_SECRET);
-            tokenBody.append("scope", "fuelfinder.read");
-
-            // Attempt 1: Standard OAuth Path
-            let tokenRes = await fetch("https://www.fuel-finder.service.gov.uk/oauth2/token", {
+            // We use the exact JSON endpoint specified in the documentation
+            const TOKEN_URL = "https://www.fuel-finder.service.gov.uk/api/v1/oauth/generate_secret_token";
+            
+            const tokenRes = await fetch(TOKEN_URL, {
                 method: "POST",
                 headers: { 
                     ...COMMON_HEADERS,
-                    "Content-Type": "application/x-www-form-urlencoded" 
+                    "Content-Type": "application/json" 
                 },
-                body: tokenBody
+                body: JSON.stringify({
+                    client_id: CLIENT_ID,
+                    client_secret: CLIENT_SECRET
+                })
             });
-
-            // Attempt 2: Fallback to the Secret Token Path
-            if (!tokenRes.ok) {
-                 tokenRes = await fetch("https://www.fuel-finder.service.gov.uk/api/v1/oauth/generate_secret_token", {
-                    method: "POST",
-                    headers: { 
-                        ...COMMON_HEADERS,
-                        "Content-Type": "application/json" 
-                    },
-                    body: JSON.stringify({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET })
-                });
-            }
 
             if (!tokenRes.ok) {
                 const errorText = await tokenRes.text();
