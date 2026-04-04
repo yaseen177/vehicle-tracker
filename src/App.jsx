@@ -1989,52 +1989,50 @@ function ProfileView({ user, showToast, onBack, onSignOut }) {
   );
 }
 
-// --- NEW MODERN LANDING PAGE (Replaces simple LoginScreen) ---
+// --- NEW MODERN LANDING PAGE (Fully Mobile Responsive) ---
 function LoginScreen({ onLogin }) {
   return (
-    <div className="fade-in" style={{ minHeight: '100vh', backgroundColor: '#09090b', color: '#f8fafc', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui, sans-serif' }}>
+    <div className="fade-in" style={{ minHeight: '100vh', backgroundColor: '#09090b', color: '#f8fafc', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui, sans-serif', overflowX: 'hidden', width: '100%' }}>
       
       {/* Top Nav */}
-      <nav style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 5%', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-        <div style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <nav style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 5%', borderBottom: '1px solid rgba(255,255,255,0.05)', width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ fontSize: 'clamp(1.2rem, 4vw, 1.5rem)', fontWeight: '800', letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           🚗 My Garage
         </div>
-        <button onClick={onLogin} className="btn btn-secondary" style={{ padding: '8px 16px', borderRadius: '20px', fontSize: '0.9rem', fontWeight: '600' }}>
+        <button onClick={onLogin} className="btn btn-secondary" style={{ padding: '8px 16px', borderRadius: '20px', fontSize: '0.9rem', fontWeight: '600', whiteSpace: 'nowrap' }}>
           Sign In
         </button>
       </nav>
 
       {/* Hero Section */}
-      {/* UPDATE: Reduced padding from '80px 20px' to '40px 20px' */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', textAlign: 'center' }}>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', textAlign: 'center', width: '100%', boxSizing: 'border-box', margin: '0 auto', maxWidth: '1200px' }}>
         
-        <div style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', padding: '6px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '24px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+        <div style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', padding: '6px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '24px', border: '1px solid rgba(59, 130, 246, 0.2)', maxWidth: '100%', wordWrap: 'break-word' }}>
           ✨ Your Complete Digital Glovebox
         </div>
         
-        {/* UPDATE: Adjusted clamp() for smaller screens and removed the hardcoded <br /> */}
-        <h1 style={{ fontSize: 'clamp(2rem, 8vw, 4.5rem)', fontWeight: '900', maxWidth: '800px', lineHeight: '1.1', margin: '0 0 24px 0', letterSpacing: '-1px' }}>
-          Manage your vehicles. <span style={{ background: 'linear-gradient(to right, #3b82f6, #8b5cf6)', WebkitBackgroundClip: 'text', color: 'transparent' }}>
+        <h1 style={{ fontSize: 'clamp(1.75rem, 8vw, 4.5rem)', fontWeight: '900', maxWidth: '800px', width: '100%', lineHeight: '1.2', margin: '0 0 24px 0', letterSpacing: '-1px', wordWrap: 'break-word', overflowWrap: 'break-word' }}>
+          Manage your vehicles. <br style={{ display: 'block', content: '""', marginTop: '8px' }} />
+          <span style={{ background: 'linear-gradient(to right, #3b82f6, #8b5cf6)', WebkitBackgroundClip: 'text', color: 'transparent', display: 'inline-block' }}>
             All in one place.
           </span>
         </h1>
         
-        <p style={{ fontSize: '1.1rem', color: '#9ca3af', maxWidth: '600px', margin: '0 0 40px 0', lineHeight: '1.6' }}>
+        <p style={{ fontSize: 'clamp(1rem, 4vw, 1.1rem)', color: '#9ca3af', maxWidth: '600px', width: '100%', margin: '0 0 40px 0', lineHeight: '1.6' }}>
           Track MOTs, Tax, and Insurance. Find the cheapest fuel near you. Digitalise your service history and generate professional reports for buyers.
         </p>
         
         <button 
           onClick={onLogin} 
           className="btn btn-primary"
-          style={{ padding: '16px 32px', fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(59, 130, 246, 0.4)' }}
+          style={{ padding: '16px clamp(16px, 5vw, 32px)', fontSize: 'clamp(1rem, 4vw, 1.2rem)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(59, 130, 246, 0.4)', maxWidth: '100%', boxSizing: 'border-box' }}
         >
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G" style={{width:'24px', height:'24px', background: 'white', borderRadius: '50%', padding: '2px'}} />
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G" style={{width:'24px', height:'24px', background: 'white', borderRadius: '50%', padding: '2px', flexShrink: 0}} />
           Continue with Google
         </button>
 
         {/* Feature Grid */}
-        {/* UPDATE: Changed marginTop from 80px to a fluid clamp(40px, 8vw, 80px) */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', maxWidth: '1000px', width: '100%', marginTop: 'clamp(40px, 8vw, 80px)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: '20px', width: '100%', marginTop: 'clamp(40px, 8vw, 80px)' }}>
           <FeatureCard icon="🔔" title="Smart Reminders" desc="Automated SMS alerts before your MOT, Tax, or Insurance expires." />
           <FeatureCard icon="⛽" title="Live Fuel Prices" desc="Compare real-time Unleaded and Diesel prices at 8,000+ UK forecourts." />
           <FeatureCard icon="📑" title="Digital History" desc="Upload receipts and instantly generate a PDF sale bundle for buyers." />
@@ -2043,8 +2041,8 @@ function LoginScreen({ onLogin }) {
       </main>
 
       {/* Footer */}
-      <footer style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '30px', textAlign: 'center', color: '#6b7280', fontSize: '0.85rem' }}>
-        <p>© {new Date().getFullYear()} My Garage. All rights reserved.</p>
+      <footer style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '30px 20px', textAlign: 'center', color: '#6b7280', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}>
+        <p style={{ margin: 0 }}>© {new Date().getFullYear()} My Garage. All rights reserved.</p>
       </footer>
     </div>
   );
@@ -2052,10 +2050,10 @@ function LoginScreen({ onLogin }) {
 
 function FeatureCard({ icon, title, desc }) {
   return (
-    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', padding: '24px', borderRadius: '16px', textAlign: 'left', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={e => e.currentTarget.style.transform = 'translateY(-5px)'} onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}>
-      <div style={{ fontSize: '2rem', marginBottom: '16px', background: 'rgba(255,255,255,0.05)', width: '50px', height: '50px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }}>{icon}</div>
+    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', padding: '24px', borderRadius: '16px', textAlign: 'left', transition: 'transform 0.2s', cursor: 'default', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box' }} onMouseOver={e => e.currentTarget.style.transform = 'translateY(-5px)'} onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}>
+      <div style={{ fontSize: '2rem', marginBottom: '16px', background: 'rgba(255,255,255,0.05)', width: '50px', height: '50px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px', flexShrink: 0 }}>{icon}</div>
       <h3 style={{ margin: '0 0 8px 0', color: '#f8fafc', fontSize: '1.2rem' }}>{title}</h3>
-      <p style={{ margin: 0, color: '#9ca3af', fontSize: '0.95rem', lineHeight: '1.5' }}>{desc}</p>
+      <p style={{ margin: 0, color: '#9ca3af', fontSize: '0.95rem', lineHeight: '1.5', flex: 1 }}>{desc}</p>
     </div>
   );
 }
