@@ -237,8 +237,15 @@ export async function onRequest(context) {
 
         // 5. SEND RESPONSE
         const json = JSON.stringify({ 
-            updated: new Date().toISOString(), count: uniqueStations.length, stations: uniqueStations 
-        });
+          updated: new Date().toISOString(), 
+          count: uniqueStations.length, 
+          stations: uniqueStations,
+          // ADD THIS LINE:
+          debug_sample: allLocations.length > 0 ? { 
+              station: allLocations[0], 
+              prices: allPrices[allLocations[0].node_id || allLocations[0].id] 
+          } : null
+      });
 
         response = new Response(json, { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=1800" } });
         context.waitUntil(cache.put(cacheKey, response.clone()));
