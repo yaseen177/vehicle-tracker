@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Built exactly to the REST and OAuth specifications provided.
+   Handles 'getAllPFSFuelPrices' schema & pagination limits
 */
 
 // GLOBAL CACHE (Persists while the server is "warm")
@@ -13,15 +13,15 @@ export async function onRequest(context) {
     const CLIENT_SECRET = env.FUEL_CLIENT_SECRET;
 
     if (!CLIENT_ID || !CLIENT_SECRET) {
-      return new Response(JSON.stringify({ error: "Missing Fuel Finder API credentials in Cloudflare." }), { 
+      return new Response(JSON.stringify({ error: "Missing API credentials." }), { 
         status: 500,
         headers: { "Access-Control-Allow-Origin": "*" }
       });
     }
 
     const cache = caches.default;
-    // Cache bust to v4 to force Cloudflare to run the new code
-    const cacheKey = new Request("https://fuel-prices-gov-api-v4");
+    // Cache bust to v5 for the new data structure
+    const cacheKey = new Request("https://fuel-prices-gov-api-v5");
     let response = await cache.match(cacheKey);
 
     if (response) {
@@ -29,27 +29,22 @@ export async function onRequest(context) {
     }
 
     try {
-        // 1. FETCH OAUTH TOKEN
+        // 1. OAUTH TOKEN
         const now = Date.now();
         if (!cachedToken || now >= tokenExpiry) {
             
-            // Most standard OAuth servers place the token generator here:
-            const TOKEN_URL = "https://api.fuelfinder.service.gov.uk/oauth2/token"; 
-            
-            // Format strictly as application/x-www-form-urlencoded
             const tokenBody = new URLSearchParams();
             tokenBody.append("grant_type", "client_credentials");
             tokenBody.append("client_id", CLIENT_ID);
             tokenBody.append("client_secret", CLIENT_SECRET);
-            tokenBody.append("scope", "fuelfinder.read"); // Explicitly required by the docs
+            tokenBody.append("scope", "fuelfinder.read");
 
-            let tokenRes = await fetch(TOKEN_URL, {
+            let tokenRes = await fetch("https://api.fuelfinder.service.gov.uk/oauth2/token", {
                 method: "POST",
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
                 body: tokenBody
             });
 
-            // If /oauth2/token fails, try the alternative standard endpoint
             if (!tokenRes.ok) {
                  tokenRes = await fetch("https://api.fuelfinder.service.gov.uk/v1/token", {
                     method: "POST",
@@ -65,55 +60,68 @@ export async function onRequest(context) {
 
             const tokenData = await tokenRes.json();
             cachedToken = tokenData.access_token;
-            // Subtract 60 seconds from expiry as a safety buffer
             tokenExpiry = now + ((tokenData.expires_in || 3600) - 60) * 1000;
         }
 
-        // 2. FETCH FUEL DATA
-        // Using the exact domain and path from your documentation snippet
-        const API_URL = "https://api.fuelfinder.service.gov.uk/v1/prices";
+        // 2. FETCH FUEL DATA (Handle Pagination)
+        // The docs state max 500 per request. We fetch batches 1 through 5 in parallel (2,500 stations).
+        const batchesToFetch = [1, 2, 3, 4, 5];
+        
+        const batchPromises = batchesToFetch.map(batchNumber => 
+            fetch(`https://api.fuelfinder.service.gov.uk/v1/prices?batch-number=${batchNumber}`, {
+                headers: {
+                    "Authorization": `Bearer ${cachedToken}`,
+                    "Accept": "application/json"
+                }
+            }).then(res => res.ok ? res.json() : null)
+        );
 
-        const apiRes = await fetch(API_URL, {
-            headers: {
-                "Authorization": `Bearer ${cachedToken}`,
-                "Accept": "application/json"
-            }
+        const batchResults = await Promise.all(batchPromises);
+        let allRawStations = [];
+
+        batchResults.forEach(data => {
+            if (!data) return;
+            // Handle variations in the API wrapper
+            const stations = data.data || data.prices || data || [];
+            allRawStations = allRawStations.concat(stations);
         });
 
-        if (!apiRes.ok) {
-            const errorText = await apiRes.text();
-            throw new Error(`Data Fetch Error (${apiRes.status}): ${errorText}`);
-        }
+        // 3. MAP DATA TO FRONTEND FORMAT (Using exact names from the docs)
+        const mappedStations = allRawStations.map(station => {
+            let e10 = null;
+            let b7 = null;
 
-        const data = await apiRes.json();
+            // The docs specify prices are in an array called "fuel_prices"
+            if (Array.isArray(station.fuel_prices)) {
+                station.fuel_prices.forEach(fp => {
+                    if (fp.fuel_type === 'E10' || fp.fuel_type === 'E10_STANDARD' || fp.fuel_type === 'E5') e10 = fp.price;
+                    if (fp.fuel_type === 'B7' || fp.fuel_type === 'B7_STANDARD') b7 = fp.price;
+                });
+            }
 
-        // 3. MAP DATA TO FRONTEND FORMAT
-        // Safely extract the array whether it's wrapped in a 'data' object or sent directly
-        const rawStations = data.forecourts || data.prices || data.data || data || [];
-        
-        const mappedStations = rawStations.map(station => {
-            // Flexible extraction to catch different variations of price object naming
-            const e10 = station.prices?.E10 || station.prices?.e10 || station.prices?.unleaded || station.e10_price || null;
-            const b7 = station.prices?.B7 || station.prices?.b7 || station.prices?.diesel || station.b7_price || null;
+            // Fallback for location data structure
+            const lat = station.location?.latitude || station.latitude || station.lat || 0;
+            const lng = station.location?.longitude || station.longitude || station.lng || 0;
 
             return {
-                site_id: station.site_id || station.id || Math.random().toString(36).substr(2, 9),
-                brand: station.brand || station.operator || "Unknown",
+                // Using "node_id" and "trading_name" from the docs
+                site_id: station.node_id || station.site_id || station.id || Math.random().toString(36).substr(2, 9),
+                brand: station.trading_name || station.brand || station.operator || "Unknown",
                 address: station.address || "Unknown Address",
                 postcode: station.postcode || "",
-                location: {
-                    latitude: station.location?.latitude || station.latitude || station.lat || 0,
-                    longitude: station.location?.longitude || station.longitude || station.lng || 0
-                },
+                location: { latitude: lat, longitude: lng },
                 prices: { E10: e10, B7: b7 }
             };
-        }).filter(s => s.prices.E10 || s.prices.B7); // Hide stations with missing data
+        }).filter(s => (s.prices.E10 || s.prices.B7) && s.location.latitude !== 0);
+
+        // Remove any accidental duplicates across batches
+        const uniqueStations = Array.from(new Map(mappedStations.map(s => [s.site_id, s])).values());
 
         // 4. CREATE RESPONSE
         const json = JSON.stringify({ 
             updated: new Date().toISOString(),
-            count: mappedStations.length,
-            stations: mappedStations 
+            count: uniqueStations.length,
+            stations: uniqueStations 
         });
 
         response = new Response(json, {
