@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Working Auth Loop + Aggressive Address Hunter + Price Normalisation + Fast Chunking
+   Working Auth Loop + Address Hunter + Price Normalisation + Individual Timestamps
 */
 
 // GLOBAL CACHE
@@ -17,8 +17,8 @@ export async function onRequest(context) {
     }
 
     const cache = caches.default;
-    // Cache bust to v20 for Fast Chunking
-    const cacheKey = new Request("https://fuel-prices-gov-api-v20");
+    // Cache bust to v21 for individual timestamps
+    const cacheKey = new Request("https://fuel-prices-gov-api-v21");
     let response = await cache.match(cacheKey);
 
     if (response) return response;
@@ -87,12 +87,12 @@ export async function onRequest(context) {
             tokenExpiry = now + (expiresIn - 60) * 1000;
         }
 
-        // 2. FETCH ALL UK DATA (CHUNKED PARALLEL FETCHING FOR SPEED)
+        // 2. FETCH ALL UK DATA (CHUNKED)
         const allLocations = [];
         const allPrices = {};
         
         const batches = Array.from({length: 20}, (_, i) => i + 1);
-        const chunkSize = 3; // Fetch 3 batches at once to drastically cut the 30s load time down to ~8s
+        const chunkSize = 3; 
 
         for (let i = 0; i < batches.length; i += chunkSize) {
             const chunk = batches.slice(i, i + chunkSize);
@@ -128,7 +128,15 @@ export async function onRequest(context) {
             if (hitEnd) break;
         }
 
-        // 3. BRAND CLEANING
+        // --- THE DIAGNOSTIC LOG ---
+        // This prints the very first station to your Cloudflare Logs so we can inspect the exact variable names
+        if (allLocations.length > 0) {
+            const sampleId = allLocations[0].node_id || allLocations[0].id;
+            console.log("🔍 RAW STATION SAMPLE:", JSON.stringify(allLocations[0], null, 2));
+            console.log("🔍 RAW PRICE SAMPLE:", JSON.stringify(allPrices[sampleId] || [], null, 2));
+        }
+
+        // 3. CLEANING HELPERS
         const cleanBrandName = (rawName) => {
             if (!rawName) return "Unknown";
             const name = rawName.toUpperCase();
@@ -162,9 +170,21 @@ export async function onRequest(context) {
             const stationPricesArray = allPrices[sid] || [];
             let e10 = null, b7 = null;
 
+            // Smart Sniffer: Check the main station object for a generic timestamp
+            let stationTimestamp = station.last_updated || station.updated_at || station.timestamp || station.effective_date || null;
+
             stationPricesArray.forEach(fp => {
                 if (fp.fuel_type === 'E10' || fp.fuel_type === 'E10_STANDARD' || fp.fuel_type === 'E5') e10 = formatPrice(fp.price);
                 if (fp.fuel_type === 'B7' || fp.fuel_type === 'B7_STANDARD') b7 = formatPrice(fp.price);
+
+                // Smart Sniffer: Check the individual price object for a timestamp
+                const fpTime = fp.last_updated || fp.updated_at || fp.timestamp || fp.effective_date || null;
+                if (fpTime) {
+                    // Keep the absolute most recent timestamp we find
+                    if (!stationTimestamp || new Date(fpTime) > new Date(stationTimestamp)) {
+                        stationTimestamp = fpTime;
+                    }
+                }
             });
 
             const lat = station.location?.latitude || station.location?.lat || station.latitude || 0;
@@ -208,7 +228,8 @@ export async function onRequest(context) {
                 address: cleanAddress,
                 postcode: station.postcode || "",
                 location: { latitude: lat, longitude: lng },
-                prices: { E10: e10, B7: b7 }
+                prices: { E10: e10, B7: b7 },
+                last_updated: stationTimestamp // <-- Sending the specific station time to frontend
             };
         }).filter(s => (s.prices.E10 || s.prices.B7) && s.location.latitude !== 0);
 

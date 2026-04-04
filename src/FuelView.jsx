@@ -27,6 +27,13 @@ const getBrandDomain = (brand) => {
   return overrides[b] || `${b}.com`;
 };
 
+// NEW HELPER: Formats the individual station's timestamp nicely
+const formatStationTime = (isoString) => {
+    if (!isoString) return "Unknown";
+    const d = new Date(isoString);
+    return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+};
+
 const mapStyles = [
   { elementType: "geometry", stylers: [{ color: "#f5f5f5" }] },
   { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
@@ -43,7 +50,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [loading, setLoading] = useState(true);
   const [selectedStation, setSelectedStation] = useState(null);
   
-  const [lastUpdated, setLastUpdated] = useState(null); 
+  const [appSyncTime, setAppSyncTime] = useState(null); 
   
   const [mapBounds, setMapBounds] = useState(null);
   const [mapCenter, setMapCenter] = useState({ lat: 51.5074, lng: -0.1278 }); 
@@ -66,8 +73,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         
         if (data.updated) {
             const dateObj = new Date(data.updated);
-            setLastUpdated(dateObj.toLocaleString('en-GB', { 
-                weekday: 'short', hour: '2-digit', minute: '2-digit' 
+            setAppSyncTime(dateObj.toLocaleString('en-GB', { 
+                hour: '2-digit', minute: '2-digit' 
             }));
         }
         
@@ -110,7 +117,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     });
   };
 
-  // NEW: Handle snapping to current location
   const handleMyLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -176,7 +182,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             style={{flex:1, padding:'8px 12px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white'}}
           />
           <button onClick={handleSearch} className="btn btn-primary" title="Search">🔍</button>
-          {/* THE NEW BUTTON: My Location snap trigger */}
           <button 
             onClick={handleMyLocation} 
             className="btn btn-primary" 
@@ -208,7 +213,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
            
            <div style={{fontSize:'0.75rem', color:'#9ca3af', fontStyle:'italic', display: 'flex', flexDirection: 'column', alignItems: 'flex-end'}}>
              <span>{visibleStations.length} stations in view</span>
-             {lastUpdated && <span style={{fontSize: '0.7rem', opacity: 0.8}}>Updated: {lastUpdated}</span>}
+             {appSyncTime && <span style={{fontSize: '0.7rem', opacity: 0.8}}>App Synced: {appSyncTime}</span>}
            </div>
 
         </div>
@@ -257,6 +262,10 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                   </div>
                 </div>
                 
+                <div style={{fontSize: '0.7rem', color: '#666', marginBottom: '8px'}}>
+                    Updated: {formatStationTime(selectedStation.last_updated)}
+                </div>
+
                 <button 
                   onClick={() => setSelectedStation(null)}
                   style={{width: '100%', background: '#333', color: 'white', border: 'none', padding: '4px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem'}}
@@ -311,7 +320,10 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                     {station.brand} <span style={{fontSize:'0.75rem', fontWeight:400, color:'#9ca3af'}}>({station.distance.toFixed(1)}m)</span>
                   </div>
                   <div style={{fontSize:'0.75rem', color:'#9ca3af', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
-                    {station.address} {lastUpdated && `• Updated: ${lastUpdated}`}
+                    {station.address} 
+                  </div>
+                  <div style={{fontSize:'0.7rem', color:'#6b7280', marginTop:'2px'}}>
+                    Updated: {formatStationTime(station.last_updated)}
                   </div>
                </div>
 
