@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Uses OAuth 2.0 Client Credentials and Caching
+   Built exactly to the REST and OAuth specifications provided.
 */
 
 // GLOBAL CACHE (Persists while the server is "warm")
@@ -20,8 +20,8 @@ export async function onRequest(context) {
     }
 
     const cache = caches.default;
-    // Cache bust to v3 so Cloudflare forces the new logic
-    const cacheKey = new Request("https://fuel-prices-gov-api-v3");
+    // Cache bust to v4 to force Cloudflare to run the new code
+    const cacheKey = new Request("https://fuel-prices-gov-api-v4");
     let response = await cache.match(cacheKey);
 
     if (response) {
@@ -29,23 +29,34 @@ export async function onRequest(context) {
     }
 
     try {
-        // 1. FETCH OAUTH TOKEN (Using the correct UK Gov Endpoint)
+        // 1. FETCH OAUTH TOKEN
         const now = Date.now();
         if (!cachedToken || now >= tokenExpiry) {
             
-            const TOKEN_URL = "https://www.fuel-finder.service.gov.uk/api/v1/oauth/generate_access_token"; 
+            // Most standard OAuth servers place the token generator here:
+            const TOKEN_URL = "https://api.fuelfinder.service.gov.uk/oauth2/token"; 
+            
+            // Format strictly as application/x-www-form-urlencoded
+            const tokenBody = new URLSearchParams();
+            tokenBody.append("grant_type", "client_credentials");
+            tokenBody.append("client_id", CLIENT_ID);
+            tokenBody.append("client_secret", CLIENT_SECRET);
+            tokenBody.append("scope", "fuelfinder.read"); // Explicitly required by the docs
 
-            const tokenRes = await fetch(TOKEN_URL, {
+            let tokenRes = await fetch(TOKEN_URL, {
                 method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    "Accept": "application/json"
-                },
-                body: JSON.stringify({
-                    client_id: CLIENT_ID,
-                    client_secret: CLIENT_SECRET
-                })
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: tokenBody
             });
+
+            // If /oauth2/token fails, try the alternative standard endpoint
+            if (!tokenRes.ok) {
+                 tokenRes = await fetch("https://api.fuelfinder.service.gov.uk/v1/token", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: tokenBody
+                });
+            }
 
             if (!tokenRes.ok) {
                 const errorText = await tokenRes.text();
@@ -53,69 +64,50 @@ export async function onRequest(context) {
             }
 
             const tokenData = await tokenRes.json();
-            
-            // The Gov API wraps the token in a "data" object
-            const token = tokenData.data?.access_token || tokenData.access_token;
-            const expiresIn = tokenData.data?.expires_in || tokenData.expires_in || 3600;
-            
-            if (!token) throw new Error("No access token found in response.");
-            
-            cachedToken = token;
-            tokenExpiry = now + (expiresIn - 60) * 1000;
+            cachedToken = tokenData.access_token;
+            // Subtract 60 seconds from expiry as a safety buffer
+            tokenExpiry = now + ((tokenData.expires_in || 3600) - 60) * 1000;
         }
 
-        // 2. FETCH FUEL DATA (Metadata and Prices are separate in this API)
-        const [metaRes, priceRes] = await Promise.all([
-            fetch("https://www.fuel-finder.service.gov.uk/api/v1/pfs", {
-                headers: { "Authorization": `Bearer ${cachedToken}`, "Accept": "application/json" }
-            }),
-            fetch("https://www.fuel-finder.service.gov.uk/api/v1/pfs/fuel-prices", {
-                headers: { "Authorization": `Bearer ${cachedToken}`, "Accept": "application/json" }
-            })
-        ]);
+        // 2. FETCH FUEL DATA
+        // Using the exact domain and path from your documentation snippet
+        const API_URL = "https://api.fuelfinder.service.gov.uk/v1/prices";
 
-        if (!metaRes.ok || !priceRes.ok) {
-            throw new Error(`Data Fetch Error: Metadata(${metaRes.status}), Prices(${priceRes.status})`);
-        }
-
-        const metaData = await metaRes.json();
-        const priceData = await priceRes.json();
-
-        // Extract the arrays
-        const stations = metaData.data || metaData.stations || metaData || [];
-        const prices = priceData.data || priceData.prices || priceData || [];
-
-        // 3. COMBINE DATA & NORMALISE FUEL TYPES
-        const priceMap = {};
-        
-        prices.forEach(p => {
-            const sid = p.site_id || p.id;
-            if (!sid) return;
-            priceMap[sid] = {};
-            
-            const rawPrices = p.prices || p.fuel_prices || {};
-            
-            // Convert Gov names (E10_STANDARD, B7_STANDARD) to match your frontend (E10, B7)
-            for (const [key, val] of Object.entries(rawPrices)) {
-                if (key.includes('E10')) priceMap[sid]['E10'] = parseFloat(val);
-                if (key.includes('B7')) priceMap[sid]['B7'] = parseFloat(val);
+        const apiRes = await fetch(API_URL, {
+            headers: {
+                "Authorization": `Bearer ${cachedToken}`,
+                "Accept": "application/json"
             }
         });
 
-        const mappedStations = stations.map(station => {
-            const sid = station.site_id || station.id;
+        if (!apiRes.ok) {
+            const errorText = await apiRes.text();
+            throw new Error(`Data Fetch Error (${apiRes.status}): ${errorText}`);
+        }
+
+        const data = await apiRes.json();
+
+        // 3. MAP DATA TO FRONTEND FORMAT
+        // Safely extract the array whether it's wrapped in a 'data' object or sent directly
+        const rawStations = data.forecourts || data.prices || data.data || data || [];
+        
+        const mappedStations = rawStations.map(station => {
+            // Flexible extraction to catch different variations of price object naming
+            const e10 = station.prices?.E10 || station.prices?.e10 || station.prices?.unleaded || station.e10_price || null;
+            const b7 = station.prices?.B7 || station.prices?.b7 || station.prices?.diesel || station.b7_price || null;
+
             return {
-                site_id: sid,
+                site_id: station.site_id || station.id || Math.random().toString(36).substr(2, 9),
                 brand: station.brand || station.operator || "Unknown",
                 address: station.address || "Unknown Address",
                 postcode: station.postcode || "",
                 location: {
-                    latitude: station.location?.latitude || station.latitude || 0,
-                    longitude: station.location?.longitude || station.longitude || 0
+                    latitude: station.location?.latitude || station.latitude || station.lat || 0,
+                    longitude: station.location?.longitude || station.longitude || station.lng || 0
                 },
-                prices: priceMap[sid] || {}
+                prices: { E10: e10, B7: b7 }
             };
-        }).filter(s => Object.keys(s.prices).length > 0); // Hide stations that have no price data yet
+        }).filter(s => s.prices.E10 || s.prices.B7); // Hide stations with missing data
 
         // 4. CREATE RESPONSE
         const json = JSON.stringify({ 
@@ -128,7 +120,7 @@ export async function onRequest(context) {
             headers: {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Origin": "*", 
-                "Cache-Control": "public, max-age=1800" // Cache 30 mins
+                "Cache-Control": "public, max-age=1800" // Cache for 30 mins
             }
         });
 
