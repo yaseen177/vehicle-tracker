@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Fix: AWS WAF Bot-Control Bypass
+   Fix: Smart Token Path Resolution & WAF Bypass
 */
 
 // GLOBAL CACHE
@@ -20,16 +20,15 @@ export async function onRequest(context) {
     }
 
     const cache = caches.default;
-    // Cache bust to v9
-    const cacheKey = new Request("https://fuel-prices-gov-api-v9");
+    // Cache bust to v10
+    const cacheKey = new Request("https://fuel-prices-gov-api-v10");
     let response = await cache.match(cacheKey);
 
     if (response) {
       return response;
     }
 
-    // THE FIX: Do not pretend to be Chrome. AWS WAF blocks "browsers" coming from data centres.
-    // Instead, declare an honest programmatic client, which is standard for API traffic.
+    // FIREWALL BYPASS HEADERS
     const COMMON_HEADERS = {
         "User-Agent": "VehicleTrackerAPIClient/1.0",
         "Accept": "application/json",
@@ -37,36 +36,51 @@ export async function onRequest(context) {
     };
 
     try {
-        // 1. FETCH OAUTH TOKEN
+        // 1. FETCH OAUTH TOKEN (Information Recipient Flow)
         const now = Date.now();
         if (!cachedToken || now >= tokenExpiry) {
             
-            // We use the exact JSON endpoint specified in the documentation
-            const TOKEN_URL = "https://www.fuel-finder.service.gov.uk/api/v1/oauth/generate_secret_token";
-            
-            const tokenRes = await fetch(TOKEN_URL, {
-                method: "POST",
-                headers: { 
-                    ...COMMON_HEADERS,
-                    "Content-Type": "application/json" 
-                },
-                body: JSON.stringify({
-                    client_id: CLIENT_ID,
-                    client_secret: CLIENT_SECRET
-                })
-            });
+            const tokenBody = new URLSearchParams();
+            tokenBody.append("grant_type", "client_credentials");
+            tokenBody.append("client_id", CLIENT_ID);
+            tokenBody.append("client_secret", CLIENT_SECRET);
+            tokenBody.append("scope", "fuelfinder.read"); // Required for read access
 
-            if (!tokenRes.ok) {
-                const errorText = await tokenRes.text();
-                throw new Error(`Auth Error (${tokenRes.status}): ${errorText}`);
+            // The docs don't specify the exact path, so we try the standard ones securely
+            const tokenPaths = [
+                "https://www.fuel-finder.service.gov.uk/oauth2/token",
+                "https://www.fuel-finder.service.gov.uk/api/oauth2/token",
+                "https://www.fuel-finder.service.gov.uk/api/v1/oauth2/token",
+                "https://www.fuel-finder.service.gov.uk/token"
+            ];
+
+            let tokenRes = null;
+            let lastErrorText = "";
+
+            for (const path of tokenPaths) {
+                tokenRes = await fetch(path, {
+                    method: "POST",
+                    headers: { 
+                        ...COMMON_HEADERS,
+                        "Content-Type": "application/x-www-form-urlencoded" 
+                    },
+                    body: tokenBody
+                });
+                
+                if (tokenRes.ok) break; // We found the right endpoint!
+                lastErrorText = await tokenRes.text();
+            }
+
+            if (!tokenRes || !tokenRes.ok) {
+                throw new Error(`Auth Failed on all paths. Last error (${tokenRes?.status}): ${lastErrorText}`);
             }
 
             const tokenData = await tokenRes.json();
             
-            const token = tokenData.access_token || tokenData.data?.access_token;
-            const expiresIn = tokenData.expires_in || tokenData.data?.expires_in || 3600;
+            const token = tokenData.access_token;
+            const expiresIn = tokenData.expires_in || 3600;
 
-            if (!token) throw new Error("No token returned by API.");
+            if (!token) throw new Error("API returned success but no access_token found.");
 
             cachedToken = token;
             tokenExpiry = now + (expiresIn - 60) * 1000;
