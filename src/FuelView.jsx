@@ -24,7 +24,7 @@ const getBrandDomain = (brand) => {
     'texaco': 'texaco.com', 'sainsburys': 'sainsburys.co.uk',
     'tesco': 'tesco.com', 'asda': 'asda.com', 'morrisons': 'morrisons.com',
     'jet': 'jetlocal.co.uk', 'applegreen': 'applegreenstores.com',
-    'gulf': 'gulfretail.co.uk'
+    'gulf': 'gulfretail.co.uk', 'costco': 'costco.co.uk'
   };
   return overrides[b] || `${b}.com`;
 };
@@ -64,7 +64,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   useEffect(() => {
     async function fetchData() {
       try {
-        const res = await fetch('/api/fuel-prices'); 
+        // FIXED: Added a cache-buster (?t=...) to force the browser to get the new government data
+        const res = await fetch(`/api/fuel-prices?t=${new Date().getTime()}`); 
         const data = await res.json();
         setStations(data.stations || []);
         setLoading(false);
@@ -74,6 +75,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       }
     }
     fetchData();
+    
     // Try to get user location once on load
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -115,16 +117,16 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const visibleStations = useMemo(() => {
     if (!stations.length || !mapBounds) return [];
     
-    // Filter: Only keep stations inside the current map view
+    // Filter: Only keep stations inside the current map view AND that sell the selected fuel
     const local = stations.filter(s => {
-      // Create a LatLng object for the station to check against bounds
+      if (!s.prices || !s.prices[fuelType]) return false; // Skip if they don't sell this fuel
       const stationLoc = new window.google.maps.LatLng(s.location.latitude, s.location.longitude);
       return mapBounds.contains(stationLoc);
     });
 
     if (local.length > 0) {
       // Calculate Average Price in this area for Traffic Lights
-      const avgPrice = local.reduce((acc, s) => acc + (s.prices[fuelType] || 0), 0) / local.length;
+      const avgPrice = local.reduce((acc, s) => acc + s.prices[fuelType], 0) / local.length;
       
       // Add Distance & Color
       const processed = local.map(s => {
@@ -140,7 +142,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       });
 
       // Sort by Cheapest Price
-      return processed.sort((a, b) => (a.prices[fuelType] || 999) - (b.prices[fuelType] || 999));
+      return processed.sort((a, b) => a.prices[fuelType] - b.prices[fuelType]);
     }
     return [];
   }, [stations, mapBounds, mapCenter, fuelType]);
@@ -212,16 +214,16 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             gestureHandling: "cooperative"
           }}
         >
-          {/* My Location Pin */}
+          {/* FIXED: My Location Pin */}
           <Marker position={mapCenter} icon="https://maps.google.com/mapfiles/ms/icons/blue-dot.png" />
           
+          {/* FIXED: Dynamic Pin Colors */}
           {visibleStations.map((station, i) => (
             <Marker
               key={i}
               position={{ lat: station.location.latitude, lng: station.location.longitude }}
               onClick={() => setSelectedStation(station)}
-              // Using HTTPS to fix console errors
-              icon={`https://maps.google.com/mapfiles/ms/icons/${station.color === 'green' ? 'green' : station.color === 'orange' ? 'orange' : 'red'}-dot.png`}
+              icon={`https://maps.google.com/mapfiles/ms/icons/${station.color}-dot.png`}
             />
           ))}
 
