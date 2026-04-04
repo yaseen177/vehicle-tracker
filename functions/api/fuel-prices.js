@@ -12,7 +12,6 @@ export async function onRequest(context) {
     const CLIENT_ID = env.FUEL_CLIENT_ID;
     const CLIENT_SECRET = env.FUEL_CLIENT_SECRET;
 
-    // Safety check
     if (!CLIENT_ID || !CLIENT_SECRET) {
       return new Response(JSON.stringify({ error: "Missing Fuel Finder API credentials in Cloudflare." }), { 
         status: 500,
@@ -20,9 +19,8 @@ export async function onRequest(context) {
       });
     }
 
-    // 1. Check Data Cache (Cache for 30 minutes to respect API rate limits)
     const cache = caches.default;
-    const cacheKey = new Request("https://fuel-prices-gov-api-v1");
+    const cacheKey = new Request("https://fuel-prices-gov-api-v2");
     let response = await cache.match(cacheKey);
 
     if (response) {
@@ -30,18 +28,18 @@ export async function onRequest(context) {
     }
 
     try {
-        // 2. FETCH OAUTH TOKEN
+        // 1. FETCH OAUTH TOKEN
         const now = Date.now();
         if (!cachedToken || now >= tokenExpiry) {
             
-            // Note: Standard Gov.uk identity token endpoint. 
-            // If your developer dashboard gave you a different token URL, update it here.
+            // Check your developer portal welcome email to confirm this is the exact token URL
             const TOKEN_URL = "https://identity.fuel-finder.service.gov.uk/oauth2/token"; 
             
             const tokenBody = new URLSearchParams({
                 grant_type: "client_credentials",
                 client_id: CLIENT_ID,
-                client_secret: CLIENT_SECRET
+                client_secret: CLIENT_SECRET,
+                scope: "fuelfinder.read"  // <--- FIXED: The Gov API requires this scope!
             });
 
             const tokenRes = await fetch(TOKEN_URL, {
@@ -50,16 +48,18 @@ export async function onRequest(context) {
                 body: tokenBody
             });
 
-            if (!tokenRes.ok) throw new Error("Failed to authenticate with Fuel Finder API");
+            // FIXED: Show the actual error message from the government server if this fails
+            if (!tokenRes.ok) {
+                const errorText = await tokenRes.text();
+                throw new Error(`Auth Error (${tokenRes.status}): ${errorText}`);
+            }
 
             const tokenData = await tokenRes.json();
             cachedToken = tokenData.access_token;
-            // Cache token for slightly less than its expiry time to prevent sudden drops
             tokenExpiry = now + ((tokenData.expires_in || 3600) - 60) * 1000;
         }
 
-        // 3. FETCH FUEL DATA
-        // Note: Check your developer portal to confirm if it is /v1/forecourts or /v1/prices
+        // 2. FETCH FUEL DATA
         const API_URL = "https://api.fuelfinder.service.gov.uk/v1/forecourts";
 
         const apiRes = await fetch(API_URL, {
@@ -69,12 +69,14 @@ export async function onRequest(context) {
             }
         });
 
-        if (!apiRes.ok) throw new Error(`Gov API returned status: ${apiRes.status}`);
+        if (!apiRes.ok) {
+            const errorText = await apiRes.text();
+            throw new Error(`Data Fetch Error (${apiRes.status}): ${errorText}`);
+        }
 
         const data = await apiRes.json();
 
-        // 4. MAP DATA TO FRONTEND FORMAT
-        // The frontend expects { site_id, brand, address, postcode, location: {latitude, longitude}, prices: {E10, B7} }
+        // 3. MAP DATA TO FRONTEND FORMAT
         const rawStations = data.forecourts || data.stations || data || [];
         
         const mappedStations = rawStations.map(station => ({
@@ -89,7 +91,7 @@ export async function onRequest(context) {
             prices: station.prices || {}
         }));
 
-        // 5. CREATE RESPONSE
+        // 4. CREATE RESPONSE
         const json = JSON.stringify({ 
             updated: new Date().toISOString(),
             count: mappedStations.length,
@@ -100,13 +102,11 @@ export async function onRequest(context) {
             headers: {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Origin": "*", 
-                "Cache-Control": "public, max-age=1800" // Cache for 30 mins (1800 seconds)
+                "Cache-Control": "public, max-age=1800" 
             }
         });
 
-        // 6. SAVE TO CACHE
         context.waitUntil(cache.put(cacheKey, response.clone()));
-
         return response;
 
     } catch (err) {
