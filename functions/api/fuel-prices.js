@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Production Ready: Lightning Fast Timestamps + Address Hunter
+   Production Ready: Lightning Fast Timestamps + Address Hunter + Opening Hours
 */
 
 // GLOBAL CACHE
@@ -17,8 +17,8 @@ export async function onRequest(context) {
     }
 
     const cache = caches.default;
-    // Cache bust to v24 for fast string comparison
-    const cacheKey = new Request("https://fuel-prices-gov-api-v24");
+    // Cache bust to v25 to include opening times
+    const cacheKey = new Request("https://fuel-prices-gov-api-v25");
     let response = await cache.match(cacheKey);
 
     if (response) return response;
@@ -78,7 +78,7 @@ export async function onRequest(context) {
             tokenExpiry = now + (expiresIn - 60) * 1000;
         }
 
-        // 2. FETCH ALL UK DATA (Fast Chunked)
+        // 2. FETCH ALL UK DATA
         const allLocations = [];
         const allPrices = {};
         
@@ -153,14 +153,13 @@ export async function onRequest(context) {
             const stationPricesArray = allPrices[sid] || [];
             let e10 = null, b7 = null;
 
-            let stationTimestamp = ""; // Use an empty string for ultra-fast comparison
+            let stationTimestamp = ""; 
 
             stationPricesArray.forEach(fp => {
                 if (fp.fuel_type === 'E10' || fp.fuel_type === 'E10_STANDARD' || fp.fuel_type === 'E5') e10 = formatPrice(fp.price);
                 if (fp.fuel_type === 'B7' || fp.fuel_type === 'B7_STANDARD') b7 = formatPrice(fp.price);
 
                 const fpTime = fp.price_change_effective_timestamp || fp.price_last_updated || "";
-                // Ultra-fast string comparison (works perfectly because ISO dates alphabetize chronologically)
                 if (fpTime > stationTimestamp) {
                     stationTimestamp = fpTime;
                 }
@@ -208,7 +207,8 @@ export async function onRequest(context) {
                 postcode: station.postcode || "",
                 location: { latitude: lat, longitude: lng },
                 prices: { E10: e10, B7: b7 },
-                last_updated: stationTimestamp || null
+                last_updated: stationTimestamp || null,
+                opening_times: station.opening_times || null // THE NEW DATA LINE
             };
         }).filter(s => (s.prices.E10 || s.prices.B7) && s.location.latitude !== 0);
 

@@ -33,6 +33,75 @@ const formatStationTime = (isoString) => {
     return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 };
 
+// --- NEW INTELLIGENT OPENING HOURS HELPER ---
+const getOpenStatus = (openingTimes) => {
+    if (!openingTimes || !openingTimes.usual_days) return null;
+
+    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const now = new Date();
+    const currentDayStr = days[now.getDay()];
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+
+    const parseTime = (str) => {
+        if (!str) return 0;
+        const [h, m] = str.split(':');
+        return parseInt(h, 10) * 60 + parseInt(m, 10);
+    };
+
+    const formatTime = (str) => str ? str.substring(0, 5) : '';
+
+    const todayHours = openingTimes.usual_days[currentDayStr];
+    if (!todayHours) return null;
+
+    // 1. Is it a true 24 hour station?
+    if (todayHours.is_24_hours) {
+        return { text: "Open 24 Hours", color: "#4ade80" }; // Green
+    }
+
+    const openMins = parseTime(todayHours.open);
+    const closeMins = parseTime(todayHours.close);
+
+    // 2. Is it permanently closed today? (e.g. opens 00:00, closes 00:00)
+    if (openMins === 0 && closeMins === 0) {
+        let nextDayName = "Tomorrow";
+        let nextOpenTime = "00:00";
+        for (let i = 1; i <= 7; i++) {
+            const nextDay = days[(now.getDay() + i) % 7];
+            const nextHours = openingTimes.usual_days[nextDay];
+            if (nextHours && (nextHours.is_24_hours || parseTime(nextHours.open) > 0)) {
+                nextDayName = i === 1 ? "Tomorrow" : nextDay.charAt(0).toUpperCase() + nextDay.slice(1);
+                nextOpenTime = formatTime(nextHours.open) || "00:00";
+                if (nextHours.is_24_hours) nextOpenTime = "24 Hrs";
+                break;
+            }
+        }
+        return { text: `Closed • Opens ${nextOpenTime} ${nextDayName}`, color: "#ef4444" }; // Red
+    }
+
+    // 3. Determine if currently open (handling overnight hours correctly)
+    let isOpen = false;
+    if (closeMins <= openMins) { 
+        isOpen = currentMins >= openMins || currentMins < closeMins;
+    } else {
+        isOpen = currentMins >= openMins && currentMins < closeMins;
+    }
+
+    if (isOpen) {
+        return { text: `Open Now • Closes at ${formatTime(todayHours.close)}`, color: "#4ade80" };
+    } else {
+        if (currentMins < openMins) {
+            return { text: `Closed • Opens at ${formatTime(todayHours.open)}`, color: "#ef4444" };
+        } else {
+            const nextDay = days[(now.getDay() + 1) % 7];
+            const nextHours = openingTimes.usual_days[nextDay];
+            let opensNext = formatTime(nextHours?.open) || "00:00";
+            if(nextHours?.is_24_hours) opensNext = "24 Hrs";
+            return { text: `Closed • Opens at ${opensNext} Tomorrow`, color: "#ef4444" };
+        }
+    }
+};
+// ---------------------------------------------
+
 const mapStyles = [
   { elementType: "geometry", stylers: [{ color: "#f5f5f5" }] },
   { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
@@ -49,7 +118,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [loading, setLoading] = useState(true);
   const [selectedStation, setSelectedStation] = useState(null);
   
-  // State to track which card has the "Directions" menu open
   const [directionsOpenFor, setDirectionsOpenFor] = useState(null);
   
   const [appSyncTime, setAppSyncTime] = useState(null); 
@@ -163,7 +231,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     return [];
   }, [stations, mapBounds, mapCenter, fuelType]);
 
-  // Loading Screen
   if (loading || !isLoaded) return (
       <div style={{display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', padding:'20px', textAlign:'center'}}>
           <div style={{width:'40px', height:'40px', border:'4px solid rgba(255,255,255,0.1)', borderTop:'4px solid #3b82f6', borderRadius:'50%', animation:'spin 1s linear infinite', marginBottom:'20px'}}></div>
@@ -275,7 +342,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                 </div>
 
                 <div style={{display:'flex', gap:'5px', marginTop:'10px'}}>
-                  {/* Google Maps Link */}
                   <a 
                     href={`https://www.google.com/maps/dir/?api=1&destination=${selectedStation.location.latitude},${selectedStation.location.longitude}`}
                     target="_blank" rel="noreferrer"
@@ -303,100 +369,111 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
          </div>
 
          <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
-           {visibleStations.map((station, i) => (
-             <div 
-               key={i} 
-               className="bento-card"
-               style={{
-                 padding:'12px', 
-                 display:'flex', 
-                 flexDirection:'column',
-                 borderLeft: `4px solid ${station.color === 'green' ? '#22c55e' : station.color === 'orange' ? '#f59e0b' : '#ef4444'}`,
-                 background: selectedStation === station ? 'rgba(255,255,255,0.1)' : undefined
-               }}
-             >
-                <div 
-                    onClick={() => {
-                        if (mapRef.current) {
-                            mapRef.current.panTo({ lat: station.location.latitude, lng: station.location.longitude });
-                            mapRef.current.setZoom(15); 
-                        }
-                        setSelectedStation(station);
-                    }}
-                    style={{display:'flex', alignItems:'center', gap:'12px', cursor:'pointer'}}
-                >
-                    <div style={{width:'40px', height:'40px', background:'white', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', padding:'4px', flexShrink:0}}>
-                        <img 
-                            src={`https://img.logo.dev/${getBrandDomain(station.brand)}?token=${logoKey}&size=60&format=png`} 
-                            style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}}
-                            onError={e => e.target.style.display='none'}
-                            alt={station.brand}
-                        />
-                    </div>
+           {visibleStations.map((station, i) => {
+             const openStatus = getOpenStatus(station.opening_times);
 
-                    <div style={{flex:1, minWidth:0}}>
-                        <div style={{fontWeight:'bold', fontSize:'0.95rem', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
-                            {station.brand} <span style={{fontSize:'0.75rem', fontWeight:400, color:'#9ca3af'}}>({station.distance.toFixed(1)}m)</span>
-                        </div>
-                        <div style={{fontSize:'0.75rem', color:'#9ca3af', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
-                            {station.address} 
-                        </div>
-                        <div style={{fontSize:'0.7rem', color:'#6b7280', marginTop:'2px'}}>
-                            Updated: {formatStationTime(station.last_updated)}
-                        </div>
-                    </div>
-
-                    <div style={{textAlign:'right'}}>
-                        <div style={{fontSize:'1.1rem', fontWeight:'bold', color: station.color === 'green' ? '#4ade80' : 'white'}}>
-                            {fuelType === 'E10' ? station.prices.E10 : station.prices.B7}p
-                        </div>
-                        <div style={{fontSize:'0.75rem', color:'#666'}}>
-                            {fuelType === 'E10' ? 'Diesel' : 'Unleaded'}: {fuelType === 'E10' ? station.prices.B7 : station.prices.E10}p
-                        </div>
-                    </div>
-                </div>
-
-                {/* DIRECTIONS DROPDOWN TRIGGER */}
-                <div style={{marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'flex-end'}}>
-                    <button 
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setDirectionsOpenFor(directionsOpenFor === station.site_id ? null : station.site_id);
+             return (
+                 <div 
+                   key={i} 
+                   className="bento-card"
+                   style={{
+                     padding:'12px', 
+                     display:'flex', 
+                     flexDirection:'column',
+                     borderLeft: `4px solid ${station.color === 'green' ? '#22c55e' : station.color === 'orange' ? '#f59e0b' : '#ef4444'}`,
+                     background: selectedStation === station ? 'rgba(255,255,255,0.1)' : undefined
+                   }}
+                 >
+                    <div 
+                        onClick={() => {
+                            if (mapRef.current) {
+                                mapRef.current.panTo({ lat: station.location.latitude, lng: station.location.longitude });
+                                mapRef.current.setZoom(15); 
+                            }
+                            setSelectedStation(station);
                         }}
-                        style={{background: 'rgba(255,255,255,0.1)', border: 'none', color: '#9ca3af', padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'}}
+                        style={{display:'flex', alignItems:'center', gap:'12px', cursor:'pointer'}}
                     >
-                        Directions {directionsOpenFor === station.site_id ? '▲' : '▼'}
-                    </button>
-                </div>
+                        <div style={{width:'40px', height:'40px', background:'white', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', padding:'4px', flexShrink:0}}>
+                            <img 
+                                src={`https://img.logo.dev/${getBrandDomain(station.brand)}?token=${logoKey}&size=60&format=png`} 
+                                style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}}
+                                onError={e => e.target.style.display='none'}
+                                alt={station.brand}
+                            />
+                        </div>
 
-                {/* THE DIRECTIONS MENU */}
-                {directionsOpenFor === station.site_id && (
-                    <div style={{display: 'flex', gap: '8px', marginTop: '10px'}}>
-                        <a 
-                            href={`https://www.google.com/maps/dir/?api=1&destination=${station.location.latitude},${station.location.longitude}`}
-                            target="_blank" rel="noreferrer"
-                            style={{flex: 1, textAlign: 'center', background: '#eaf3eb', color: '#1a73e8', textDecoration: 'none', padding: '8px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold'}}
-                        >
-                            Google Maps
-                        </a>
-                        <a 
-                            href={`http://maps.apple.com/?daddr=${station.location.latitude},${station.location.longitude}`}
-                            target="_blank" rel="noreferrer"
-                            style={{flex: 1, textAlign: 'center', background: '#f3f4f6', color: '#111827', textDecoration: 'none', padding: '8px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold'}}
-                        >
-                            Apple Maps
-                        </a>
-                        <a 
-                            href={`https://waze.com/ul?ll=${station.location.latitude},${station.location.longitude}&navigate=yes`}
-                            target="_blank" rel="noreferrer"
-                            style={{flex: 1, textAlign: 'center', background: '#e0f2fe', color: '#0369a1', textDecoration: 'none', padding: '8px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold'}}
-                        >
-                            Waze
-                        </a>
+                        <div style={{flex:1, minWidth:0}}>
+                            <div style={{fontWeight:'bold', fontSize:'0.95rem', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
+                                {station.brand} <span style={{fontSize:'0.75rem', fontWeight:400, color:'#9ca3af'}}>({station.distance.toFixed(1)}m)</span>
+                            </div>
+                            <div style={{fontSize:'0.75rem', color:'#9ca3af', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
+                                {station.address} 
+                            </div>
+                            <div style={{fontSize:'0.7rem', color:'#6b7280', marginTop:'2px'}}>
+                                Updated: {formatStationTime(station.last_updated)}
+                            </div>
+                        </div>
+
+                        <div style={{textAlign:'right'}}>
+                            <div style={{fontSize:'1.1rem', fontWeight:'bold', color: station.color === 'green' ? '#4ade80' : 'white'}}>
+                                {fuelType === 'E10' ? station.prices.E10 : station.prices.B7}p
+                            </div>
+                            <div style={{fontSize:'0.75rem', color:'#666'}}>
+                                {fuelType === 'E10' ? 'Diesel' : 'Unleaded'}: {fuelType === 'E10' ? station.prices.B7 : station.prices.E10}p
+                            </div>
+                        </div>
                     </div>
-                )}
-             </div>
-           ))}
+
+                    {/* STATUS & DIRECTIONS ROW */}
+                    <div style={{marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                        
+                        {/* OPEN / CLOSED STATUS */}
+                        <div style={{fontSize: '0.8rem', fontWeight: 'bold', color: openStatus ? openStatus.color : '#9ca3af'}}>
+                            {openStatus ? openStatus.text : ""}
+                        </div>
+
+                        {/* DIRECTIONS DROPDOWN TRIGGER */}
+                        <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setDirectionsOpenFor(directionsOpenFor === station.site_id ? null : station.site_id);
+                            }}
+                            style={{background: 'rgba(255,255,255,0.1)', border: 'none', color: '#9ca3af', padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'}}
+                        >
+                            Directions {directionsOpenFor === station.site_id ? '▲' : '▼'}
+                        </button>
+                    </div>
+
+                    {/* THE DIRECTIONS MENU */}
+                    {directionsOpenFor === station.site_id && (
+                        <div style={{display: 'flex', gap: '8px', marginTop: '10px'}}>
+                            <a 
+                                href={`https://www.google.com/maps/dir/?api=1&destination=${station.location.latitude},${station.location.longitude}`}
+                                target="_blank" rel="noreferrer"
+                                style={{flex: 1, textAlign: 'center', background: '#eaf3eb', color: '#1a73e8', textDecoration: 'none', padding: '8px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold'}}
+                            >
+                                Google Maps
+                            </a>
+                            <a 
+                                href={`http://maps.apple.com/?daddr=${station.location.latitude},${station.location.longitude}`}
+                                target="_blank" rel="noreferrer"
+                                style={{flex: 1, textAlign: 'center', background: '#f3f4f6', color: '#111827', textDecoration: 'none', padding: '8px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold'}}
+                            >
+                                Apple Maps
+                            </a>
+                            <a 
+                                href={`https://waze.com/ul?ll=${station.location.latitude},${station.location.longitude}&navigate=yes`}
+                                target="_blank" rel="noreferrer"
+                                style={{flex: 1, textAlign: 'center', background: '#e0f2fe', color: '#0369a1', textDecoration: 'none', padding: '8px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold'}}
+                            >
+                                Waze
+                            </a>
+                        </div>
+                    )}
+                 </div>
+             );
+           })}
          </div>
       </div>
 
