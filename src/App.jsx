@@ -93,7 +93,7 @@ function MainApp() {
   
   // Loading & Refresh State
   const [loading, setLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false); // <--- FIXED NAME
+  const [isRefreshing, setIsRefreshing] = useState(false); 
 
   // UI State
   const [showAddWizard, setShowAddWizard] = useState(false);
@@ -275,8 +275,8 @@ function MainApp() {
             loading={loading}
             onOpen={openVehicle} 
             onAddClick={() => setShowAddWizard(true)}
-            onRefreshAll={handleRefreshAll} // <--- CORRECTED PROP NAME
-            isRefreshing={isRefreshing}     // <--- CORRECTED PROP NAME
+            onRefreshAll={handleRefreshAll} 
+            isRefreshing={isRefreshing}     
           />
         )}
 
@@ -344,7 +344,7 @@ const MenuLink = ({ icon, label, active, onClick }) => (
   </button>
 );
 
-// --- NEW HELP VIEW COMPONENT ---
+// --- HELP VIEW COMPONENT ---
 function HelpView({ onBack }) {
   return (
     <div className="fade-in" style={{maxWidth:'600px', margin:'0 auto', padding:'20px'}}>
@@ -397,23 +397,71 @@ const HelpItem = ({ icon, title, desc }) => (
   </div>
 );
 
-// --- OTHER VIEWS (Unchanged but included for completeness) ---
-
+// --- NEW MODERN LANDING PAGE (Replaces simple LoginScreen) ---
 function LoginScreen({ onLogin }) {
   return (
-    <div style={{
-      display:'flex', height:'100vh', alignItems:'center', justifyContent:'center',
-      background: 'radial-gradient(circle at 50% 10%, #1f2937 0%, #000000 100%)', padding: '20px'
-    }}>
-      <div className="bento-card fade-in" style={{textAlign:'center', maxWidth:'420px', width: '100%', border:'1px solid rgba(255,255,255,0.1)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)'}}>
-        <div style={{fontSize:'3rem', marginBottom:'10px'}}>🚗</div>
-        <h1 style={{fontSize:'2.2rem', marginBottom:'8px', fontWeight:'800', letterSpacing:'-1px'}}>My Garage</h1>
-        <p style={{color:'#9ca3af', fontSize:'1.1rem', marginBottom:'30px', lineHeight:'1.5'}}>The smart companion for your vehicle's history, fuel, and maintenance.</p>
-        <button onClick={onLogin} className="btn btn-primary btn-full" style={{padding:'16px', fontSize:'1.1rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'10px'}}>
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G" style={{width:'20px', height:'20px'}} />
-          Sign in with Google
+    <div className="fade-in" style={{ minHeight: '100vh', backgroundColor: '#09090b', color: '#f8fafc', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui, sans-serif' }}>
+      
+      {/* Top Nav */}
+      <nav style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 5%', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <div style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          🚗 My Garage
+        </div>
+        <button onClick={onLogin} className="btn btn-secondary" style={{ padding: '8px 16px', borderRadius: '20px', fontSize: '0.9rem', fontWeight: '600' }}>
+          Sign In
         </button>
-      </div>
+      </nav>
+
+      {/* Hero Section */}
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', textAlign: 'center' }}>
+        
+        <div style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', padding: '6px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '24px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+          ✨ Your Complete Digital Glovebox
+        </div>
+        
+        <h1 style={{ fontSize: 'clamp(2.5rem, 5vw, 4.5rem)', fontWeight: '900', maxWidth: '800px', lineHeight: '1.1', margin: '0 0 24px 0', letterSpacing: '-1px' }}>
+          Manage your vehicles. <br />
+          <span style={{ background: 'linear-gradient(to right, #3b82f6, #8b5cf6)', WebkitBackgroundClip: 'text', color: 'transparent' }}>
+            All in one place.
+          </span>
+        </h1>
+        
+        <p style={{ fontSize: '1.1rem', color: '#9ca3af', maxWidth: '600px', margin: '0 0 40px 0', lineHeight: '1.6' }}>
+          Track MOTs, Tax, and Insurance. Find the cheapest fuel near you. Digitalise your service history and generate professional reports for buyers.
+        </p>
+        
+        <button 
+          onClick={onLogin} 
+          className="btn btn-primary"
+          style={{ padding: '16px 32px', fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(59, 130, 246, 0.4)' }}
+        >
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G" style={{width:'24px', height:'24px', background: 'white', borderRadius: '50%', padding: '2px'}} />
+          Continue with Google
+        </button>
+
+        {/* Feature Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', maxWidth: '1000px', width: '100%', marginTop: '80px' }}>
+          <FeatureCard icon="🔔" title="Smart Reminders" desc="Automated SMS alerts before your MOT, Tax, or Insurance expires." />
+          <FeatureCard icon="⛽" title="Live Fuel Prices" desc="Compare real-time Unleaded and Diesel prices at 8,000+ UK forecourts." />
+          <FeatureCard icon="📑" title="Digital History" desc="Upload receipts and instantly generate a PDF sale bundle for buyers." />
+        </div>
+
+      </main>
+
+      {/* Footer */}
+      <footer style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '30px', textAlign: 'center', color: '#6b7280', fontSize: '0.85rem' }}>
+        <p>© {new Date().getFullYear()} My Garage. Created by Yaseen Hussain.</p>
+      </footer>
+    </div>
+  );
+}
+
+function FeatureCard({ icon, title, desc }) {
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', padding: '24px', borderRadius: '16px', textAlign: 'left', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={e => e.currentTarget.style.transform = 'translateY(-5px)'} onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}>
+      <div style={{ fontSize: '2rem', marginBottom: '16px', background: 'rgba(255,255,255,0.05)', width: '50px', height: '50px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }}>{icon}</div>
+      <h3 style={{ margin: '0 0 8px 0', color: '#f8fafc', fontSize: '1.2rem' }}>{title}</h3>
+      <p style={{ margin: 0, color: '#9ca3af', fontSize: '0.95rem', lineHeight: '1.5' }}>{desc}</p>
     </div>
   );
 }
@@ -437,8 +485,6 @@ const EmptyState = ({ icon, title, desc, actionLabel, onAction }) => (
   </div>
 );
 
-// 3. FLEET TIMELINE (Multi-car view)
-// 3. FLEET TIMELINE (Mobile Optimized)
 // 3. FLEET TIMELINE (Mobile Optimized)
 const FleetTimeline = ({ vehicles }) => {
   // Collect all upcoming dates
@@ -1824,7 +1870,6 @@ const StatusDot = ({ date }) => {
   return <span className={`status-dot ${color}`}></span>;
 };
 
-// --- ADD THIS AT THE BOTTOM OF App.jsx ---
 
 const TaxBadge = ({ status, date }) => {
   if (!status) return null;
@@ -1865,7 +1910,7 @@ const Badge = ({ date }) => {
 };
 
 
-// Updated ProfileView - NOW INCLUDES 'onSignOut' in the top list
+// Updated ProfileView
 function ProfileView({ user, showToast, onBack, onSignOut }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -1997,4 +2042,74 @@ function ProfileView({ user, showToast, onBack, onSignOut }) {
     </div>
   );
 }
+
+// --- NEW MODERN LANDING PAGE (Replaces simple LoginScreen) ---
+function LoginScreen({ onLogin }) {
+  return (
+    <div className="fade-in" style={{ minHeight: '100vh', backgroundColor: '#09090b', color: '#f8fafc', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui, sans-serif' }}>
+      
+      {/* Top Nav */}
+      <nav style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 5%', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <div style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          🚗 My Garage
+        </div>
+        <button onClick={onLogin} className="btn btn-secondary" style={{ padding: '8px 16px', borderRadius: '20px', fontSize: '0.9rem', fontWeight: '600' }}>
+          Sign In
+        </button>
+      </nav>
+
+      {/* Hero Section */}
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', textAlign: 'center' }}>
+        
+        <div style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', padding: '6px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '24px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+          ✨ Your Complete Digital Glovebox
+        </div>
+        
+        <h1 style={{ fontSize: 'clamp(2.5rem, 5vw, 4.5rem)', fontWeight: '900', maxWidth: '800px', lineHeight: '1.1', margin: '0 0 24px 0', letterSpacing: '-1px' }}>
+          Manage your vehicles. <br />
+          <span style={{ background: 'linear-gradient(to right, #3b82f6, #8b5cf6)', WebkitBackgroundClip: 'text', color: 'transparent' }}>
+            All in one place.
+          </span>
+        </h1>
+        
+        <p style={{ fontSize: '1.1rem', color: '#9ca3af', maxWidth: '600px', margin: '0 0 40px 0', lineHeight: '1.6' }}>
+          Track MOTs, Tax, and Insurance. Find the cheapest fuel near you. Digitalise your service history and generate professional reports for buyers.
+        </p>
+        
+        <button 
+          onClick={onLogin} 
+          className="btn btn-primary"
+          style={{ padding: '16px 32px', fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(59, 130, 246, 0.4)' }}
+        >
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G" style={{width:'24px', height:'24px', background: 'white', borderRadius: '50%', padding: '2px'}} />
+          Continue with Google
+        </button>
+
+        {/* Feature Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', maxWidth: '1000px', width: '100%', marginTop: '80px' }}>
+          <FeatureCard icon="🔔" title="Smart Reminders" desc="Automated SMS alerts before your MOT, Tax, or Insurance expires." />
+          <FeatureCard icon="⛽" title="Live Fuel Prices" desc="Compare real-time Unleaded and Diesel prices at 8,000+ UK forecourts." />
+          <FeatureCard icon="📑" title="Digital History" desc="Upload receipts and instantly generate a PDF sale bundle for buyers." />
+        </div>
+
+      </main>
+
+      {/* Footer */}
+      <footer style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '30px', textAlign: 'center', color: '#6b7280', fontSize: '0.85rem' }}>
+        <p>© {new Date().getFullYear()} My Garage. All rights reserved.</p>
+      </footer>
+    </div>
+  );
+}
+
+function FeatureCard({ icon, title, desc }) {
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', padding: '24px', borderRadius: '16px', textAlign: 'left', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={e => e.currentTarget.style.transform = 'translateY(-5px)'} onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}>
+      <div style={{ fontSize: '2rem', marginBottom: '16px', background: 'rgba(255,255,255,0.05)', width: '50px', height: '50px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }}>{icon}</div>
+      <h3 style={{ margin: '0 0 8px 0', color: '#f8fafc', fontSize: '1.2rem' }}>{title}</h3>
+      <p style={{ margin: 0, color: '#9ca3af', fontSize: '0.95rem', lineHeight: '1.5' }}>{desc}</p>
+    </div>
+  );
+}
+
 export default App;
