@@ -1,100 +1,118 @@
+/* CLOUDFLARE PAGES FUNCTION 
+   UK Government Fuel Finder API Integration
+   Uses OAuth 2.0 Client Credentials and Caching
+*/
+
+// GLOBAL CACHE (Persists while the server is "warm")
+let cachedToken = null;
+let tokenExpiry = 0;
+
 export async function onRequest(context) {
-    // --- PASTE YOUR GOOGLE SCRIPT URL HERE ---
-    // Example: "https://script.google.com/macros/s/AKfycbx.../exec"
-    const GOOGLE_SCRIPT_TESCO_URL = "https://script.google.com/macros/s/AKfycbyZv8_regMNjljitUXhxt8tObXnEgiC-l0hJ4kWTkfngB42Ab1ZRDDR-ksss6FsF-l5EQ/exec"; 
-    
-    const SOURCES = [
-      { name: "Ascona", url: "https://fuelprices.asconagroup.co.uk/newfuel.json" },
-      { name: "Asda", url: "https://storelocator.asda.com/fuel_prices_data.json" },
-      { name: "BP", url: "https://www.bp.com/en_gb/united-kingdom/home/fuelprices/fuel_prices_data.json" },
-      { name: "Esso", url: "https://fuelprices.esso.co.uk/latestdata.json" },
-      { name: "Jet", url: "https://jetlocal.co.uk/fuel_prices_data.json" },
-      { name: "Karan", url: "https://devapi.krlpos.com/integration/live_price/krl" },
-      { name: "Morrisons", url: "https://www.morrisons.com/fuel-prices/fuel.json" },
-      { name: "Moto", url: "https://moto-way.com/fuel-price/fuel_prices.json" },
-      { name: "MFG", url: "https://fuel.motorfuelgroup.com/fuel_prices_data.json" },
-      { name: "Rontec", url: "https://www.rontec-servicestations.co.uk/fuel-prices/data/fuel_prices_data.json" },
-      { name: "Sainsburys", url: "https://api.sainsburys.co.uk/v1/exports/latest/fuel_prices_data.json" },
-      { name: "SGN", url: "https://www.sgnretail.uk/files/data/SGN_daily_fuel_prices.json" },
-      { name: "Shell", url: "https://www.shell.co.uk/fuel-prices-data.html" },
-      // We use the Google Script URL for Tesco
-      { name: "Tesco", url: GOOGLE_SCRIPT_TESCO_URL } 
-    ];
-  
-    // 1. Check Cache (Version 9 to force a fresh start)
+    const { env } = context;
+    const CLIENT_ID = env.FUEL_CLIENT_ID;
+    const CLIENT_SECRET = env.FUEL_CLIENT_SECRET;
+
+    // Safety check
+    if (!CLIENT_ID || !CLIENT_SECRET) {
+      return new Response(JSON.stringify({ error: "Missing Fuel Finder API credentials in Cloudflare." }), { 
+        status: 500,
+        headers: { "Access-Control-Allow-Origin": "*" }
+      });
+    }
+
+    // 1. Check Data Cache (Cache for 30 minutes to respect API rate limits)
     const cache = caches.default;
-    const cacheKey = new Request("https://fuel-prices-aggregated-v9"); 
+    const cacheKey = new Request("https://fuel-prices-gov-api-v1");
     let response = await cache.match(cacheKey);
-  
+
     if (response) {
       return response;
     }
-  
-    // 2. Generic Headers for the standard providers
-    const headers = {
-      "User-Agent": "Mozilla/5.0 (Compatible; FuelTracker/1.0)",
-      "Accept": "application/json"
-    };
-  
-    // 3. Fetch all sources
-    const requests = SOURCES.map(async (source) => {
-      // skip if user hasn't pasted the URL yet
-      if (source.name === "Tesco" && source.url.includes("PASTE_YOUR")) return null;
-  
-      try {
-        // 6 second timeout to prevent hanging
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
-  
-        const response = await fetch(source.url, { 
-          headers, 
-          signal: controller.signal 
+
+    try {
+        // 2. FETCH OAUTH TOKEN
+        const now = Date.now();
+        if (!cachedToken || now >= tokenExpiry) {
+            
+            // Note: Standard Gov.uk identity token endpoint. 
+            // If your developer dashboard gave you a different token URL, update it here.
+            const TOKEN_URL = "https://identity.fuel-finder.service.gov.uk/oauth2/token"; 
+            
+            const tokenBody = new URLSearchParams({
+                grant_type: "client_credentials",
+                client_id: CLIENT_ID,
+                client_secret: CLIENT_SECRET
+            });
+
+            const tokenRes = await fetch(TOKEN_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: tokenBody
+            });
+
+            if (!tokenRes.ok) throw new Error("Failed to authenticate with Fuel Finder API");
+
+            const tokenData = await tokenRes.json();
+            cachedToken = tokenData.access_token;
+            // Cache token for slightly less than its expiry time to prevent sudden drops
+            tokenExpiry = now + ((tokenData.expires_in || 3600) - 60) * 1000;
+        }
+
+        // 3. FETCH FUEL DATA
+        // Note: Check your developer portal to confirm if it is /v1/forecourts or /v1/prices
+        const API_URL = "https://api.fuelfinder.service.gov.uk/v1/forecourts";
+
+        const apiRes = await fetch(API_URL, {
+            headers: {
+                "Authorization": `Bearer ${cachedToken}`,
+                "Accept": "application/json"
+            }
         });
-        clearTimeout(timeoutId);
+
+        if (!apiRes.ok) throw new Error(`Gov API returned status: ${apiRes.status}`);
+
+        const data = await apiRes.json();
+
+        // 4. MAP DATA TO FRONTEND FORMAT
+        // The frontend expects { site_id, brand, address, postcode, location: {latitude, longitude}, prices: {E10, B7} }
+        const rawStations = data.forecourts || data.stations || data || [];
         
-        if (!response.ok) return null;
-  
-        const data = await response.json();
-        
-        // Handle standard "stations" key
-        if (data.stations) return data.stations;
-        // Handle "sites" key (some providers use this)
-        if (data.sites) return data.sites;
-        
-        return null;
-  
-      } catch (err) {
-        return null; // Silently fail individually
-      }
-    });
-    
-    const results = await Promise.all(requests);
-  
-    // 4. Flatten the arrays
-    let allStations = [];
-    results.forEach(list => {
-      if (list && Array.isArray(list)) {
-        allStations = [...allStations, ...list];
-      }
-    });
-  
-    // 5. Create Response
-    const json = JSON.stringify({ 
-      updated: new Date().toISOString(),
-      count: allStations.length,
-      stations: allStations 
-    });
-  
-    response = new Response(json, {
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*", 
-        "Cache-Control": "public, max-age=3600" // Cache for 1 hour
-      }
-    });
-  
-    // 6. Save to Cache
-    context.waitUntil(cache.put(cacheKey, response.clone()));
-  
-    return response;
-  }
+        const mappedStations = rawStations.map(station => ({
+            site_id: station.site_id || station.id || Math.random().toString(36).substr(2, 9),
+            brand: station.brand || station.operator || "Unknown",
+            address: station.address || "Unknown Address",
+            postcode: station.postcode || "",
+            location: {
+                latitude: station.location?.latitude || station.latitude || 0,
+                longitude: station.location?.longitude || station.longitude || 0
+            },
+            prices: station.prices || {}
+        }));
+
+        // 5. CREATE RESPONSE
+        const json = JSON.stringify({ 
+            updated: new Date().toISOString(),
+            count: mappedStations.length,
+            stations: mappedStations 
+        });
+
+        response = new Response(json, {
+            headers: {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*", 
+                "Cache-Control": "public, max-age=1800" // Cache for 30 mins (1800 seconds)
+            }
+        });
+
+        // 6. SAVE TO CACHE
+        context.waitUntil(cache.put(cacheKey, response.clone()));
+
+        return response;
+
+    } catch (err) {
+        return new Response(JSON.stringify({ error: err.message }), { 
+            status: 500,
+            headers: { "Access-Control-Allow-Origin": "*" }
+        });
+    }
+}
