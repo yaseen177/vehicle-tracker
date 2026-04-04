@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Fix: Address Object Parsing & Brand Name Prioritisation
+   Working Auth Loop + Fixed Address & Brand Names
 */
 
 // GLOBAL CACHE
@@ -20,8 +20,8 @@ export async function onRequest(context) {
     }
 
     const cache = caches.default;
-    // Cache bust to v16 for the new Address & Brand mapping
-    const cacheKey = new Request("https://fuel-prices-gov-api-v16");
+    // Cache bust to v17 for the final polish
+    const cacheKey = new Request("https://fuel-prices-gov-api-v17");
     let response = await cache.match(cacheKey);
 
     if (response) {
@@ -36,41 +36,63 @@ export async function onRequest(context) {
     };
 
     try {
-        // 1. FETCH OAUTH TOKEN
+        // 1. OAUTH TOKEN HUNTER (The version that successfully connects)
         const now = Date.now();
         if (!cachedToken || now >= tokenExpiry) {
-            const tokenBody = new URLSearchParams();
-            tokenBody.append("grant_type", "client_credentials");
-            tokenBody.append("client_id", CLIENT_ID);
-            tokenBody.append("client_secret", CLIENT_SECRET);
-            tokenBody.append("scope", "fuelfinder.read"); 
+            
+            const formBody = new URLSearchParams();
+            formBody.append("grant_type", "client_credentials");
+            formBody.append("client_id", CLIENT_ID);
+            formBody.append("client_secret", CLIENT_SECRET);
+            formBody.append("scope", "fuelfinder.read"); 
 
-            const tokenPaths = [
-                "https://api.fuelfinder.service.gov.uk/oauth2/token",
-                "https://api.fuelfinder.service.gov.uk/v1/oauth/token",
-                "https://www.fuel-finder.service.gov.uk/api/v1/oauth/token",
-                "https://www.fuel-finder.service.gov.uk/oauth2/token"
+            const jsonBody = JSON.stringify({
+                client_id: CLIENT_ID,
+                client_secret: CLIENT_SECRET,
+                grant_type: "client_credentials",
+                scope: "fuelfinder.read"
+            });
+
+            const endpointsToTest = [
+                { url: "https://www.fuel-finder.service.gov.uk/api/v1/oauth/token", type: "form" },
+                { url: "https://www.fuel-finder.service.gov.uk/api/v1/token", type: "form" },
+                { url: "https://www.fuel-finder.service.gov.uk/api/oauth2/token", type: "form" },
+                { url: "https://www.fuel-finder.service.gov.uk/api/v1/oauth/generate_access_token", type: "json" },
+                { url: "https://www.fuel-finder.service.gov.uk/api/v1/oauth/generate_secret_token", type: "json" },
+                { url: "https://www.fuel-finder.service.gov.uk/api/v1/oauth/generate_secret_token", type: "form" },
+                { url: "https://identity.fuel-finder.service.gov.uk/oauth2/token", type: "form" }
             ];
 
             let tokenRes = null;
+            let diagnostics = {}; 
 
-            for (const path of tokenPaths) {
+            for (const ep of endpointsToTest) {
                 try {
-                    const res = await fetch(path, {
+                    const isForm = ep.type === "form";
+                    const res = await fetch(ep.url, {
                         method: "POST",
-                        headers: { ...COMMON_HEADERS, "Content-Type": "application/x-www-form-urlencoded" },
-                        body: tokenBody
+                        headers: { 
+                            ...COMMON_HEADERS, 
+                            "Content-Type": isForm ? "application/x-www-form-urlencoded" : "application/json" 
+                        },
+                        body: isForm ? formBody : jsonBody
                     });
                     
                     if (res.ok) {
                         tokenRes = res;
                         break; 
+                    } else {
+                        let text = await res.text();
+                        if (text.includes("<!DOCTYPE html>")) text = "404 Next.js HTML Page"; 
+                        diagnostics[`${ep.type.toUpperCase()}: ${ep.url}`] = `HTTP ${res.status} - ${text.substring(0, 100)}`;
                     }
-                } catch (e) { /* Ignore network errors and try next path */ }
+                } catch (networkError) {
+                    diagnostics[`${ep.type.toUpperCase()}: ${ep.url}`] = `Network Error: ${networkError.message}`;
+                }
             }
 
             if (!tokenRes || !tokenRes.ok) {
-                throw new Error("Auth Failed on all paths.");
+                throw new Error(JSON.stringify(diagnostics, null, 2));
             }
 
             const tokenData = await tokenRes.json();
@@ -108,16 +130,13 @@ export async function onRequest(context) {
             if (locs.length === 0) break;
 
             allLocations.push(...locs);
-            prices.forEach(p => {
-                if (p.node_id) allPrices[p.node_id] = p.fuel_prices || [];
-            });
+            prices.forEach(p => { if (p.node_id) allPrices[p.node_id] = p.fuel_prices || []; });
         }
 
-        // 3. BRAND CLEANING HELPER
+        // 3. BRAND CLEANING
         const cleanBrandName = (rawName) => {
             if (!rawName) return "Unknown";
             const name = rawName.toUpperCase();
-            
             if (name.includes("TESCO")) return "Tesco";
             if (name.includes("SAINSBURY")) return "Sainsburys";
             if (name.includes("ASDA")) return "Asda";
@@ -132,17 +151,14 @@ export async function onRequest(context) {
             if (name.includes("COSTCO")) return "Costco";
             if (name.includes("MURCO")) return "Murco";
             if (name.includes("CO-OP") || name.includes("COOP")) return "Co-op";
-            
             return rawName.toLowerCase().replace(/\b\w/g, s => s.toUpperCase());
         };
 
-        // 4. FORMAT FOR FRONTEND
+        // 4. FORMAT WITH FIXED ADDRESS & BRAND PRIORITISATION
         const mappedStations = allLocations.map(station => {
             const sid = station.node_id || station.id;
             const stationPricesArray = allPrices[sid] || [];
-            
-            let e10 = null;
-            let b7 = null;
+            let e10 = null, b7 = null;
 
             stationPricesArray.forEach(fp => {
                 if (fp.fuel_type === 'E10' || fp.fuel_type === 'E10_STANDARD' || fp.fuel_type === 'E5') e10 = fp.price;
@@ -151,16 +167,15 @@ export async function onRequest(context) {
 
             const lat = station.location?.latitude || station.location?.lat || station.latitude || 0;
             const lng = station.location?.longitude || station.location?.lng || station.longitude || 0;
-
-            // FIX 1: Prioritize the official brand_name over the trading_name
+            
+            // FIX 1: Prioritise the true brand name over the franchisee trading name
             const rawBrand = station.brand_name || station.trading_name || "Unknown";
 
-            // FIX 2: Safely parse the address whether it's a string or an object
+            // FIX 2: Safely parse the address whether it is a string or an object
             let cleanAddress = "Unknown Address";
             if (typeof station.address === 'string' && station.address.trim() !== '') {
                 cleanAddress = station.address;
             } else if (typeof station.address === 'object' && station.address !== null) {
-                // Combine available address parts (e.g. line 1 and town)
                 const addressParts = [
                     station.address.line_1 || station.address.address_line_1,
                     station.address.town || station.address.post_town || station.address.city
@@ -173,7 +188,7 @@ export async function onRequest(context) {
 
             return {
                 site_id: sid || Math.random().toString(36).substr(2, 9),
-                brand: cleanBrandName(rawBrand), // Neatly formatted for logo.dev
+                brand: cleanBrandName(rawBrand),
                 address: cleanAddress,
                 postcode: station.postcode || "",
                 location: { latitude: lat, longitude: lng },
@@ -185,26 +200,14 @@ export async function onRequest(context) {
 
         // 5. SEND RESPONSE
         const json = JSON.stringify({ 
-            updated: new Date().toISOString(),
-            count: uniqueStations.length,
-            stations: uniqueStations 
+            updated: new Date().toISOString(), count: uniqueStations.length, stations: uniqueStations 
         });
 
-        response = new Response(json, {
-            headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*", 
-                "Cache-Control": "public, max-age=1800"
-            }
-        });
-
+        response = new Response(json, { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=1800" } });
         context.waitUntil(cache.put(cacheKey, response.clone()));
         return response;
 
     } catch (err) {
-        return new Response(JSON.stringify({ error: err.message }), { 
-            status: 500,
-            headers: { "Access-Control-Allow-Origin": "*" }
-        });
+        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { "Access-Control-Allow-Origin": "*" } });
     }
 }
