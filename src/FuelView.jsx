@@ -43,7 +43,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [loading, setLoading] = useState(true);
   const [selectedStation, setSelectedStation] = useState(null);
   
-  // NEW: State to hold the timestamp
   const [lastUpdated, setLastUpdated] = useState(null); 
   
   const [mapBounds, setMapBounds] = useState(null);
@@ -65,7 +64,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         
         setStations(data.stations || []);
         
-        // NEW: Grab the timestamp from the JSON and format it nicely for the UK
         if (data.updated) {
             const dateObj = new Date(data.updated);
             setLastUpdated(dateObj.toLocaleString('en-GB', { 
@@ -182,10 +180,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
               >Diesel</button>
            </div>
            
-           {/* NEW: Displaying the Last Updated Timestamp */}
-           <div style={{fontSize:'0.75rem', color:'#9ca3af', fontStyle:'italic', display: 'flex', flexDirection: 'column', alignItems: 'flex-end'}}>
-             <span>{visibleStations.length} stations in view</span>
-             {lastUpdated && <span style={{fontSize: '0.7rem', opacity: 0.8}}>Updated: {lastUpdated}</span>}
+           <div style={{fontSize:'0.75rem', color:'#9ca3af', fontStyle:'italic'}}>
+             {visibleStations.length} stations in view
            </div>
 
         </div>
@@ -206,14 +202,16 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             gestureHandling: "cooperative"
           }}
         >
-          <Marker position={mapCenter} icon="https://maps.google.com/mapfiles/ms/icons/blue-dot.png" />
+          {/* Default Google marker for user location */}
+          <Marker position={mapCenter} />
           
           {visibleStations.map((station, i) => (
             <Marker
               key={i}
               position={{ lat: station.location.latitude, lng: station.location.longitude }}
               onClick={() => setSelectedStation(station)}
-              icon={`https://maps.google.com/mapfiles/ms/icons/$${station.color === 'green' ? 'green' : station.color === 'orange' ? 'orange' : 'red'}-dot.png`}
+              // THE FIX: Corrected typo and updated to official HTTPS icon path
+              icon={`https://maps.google.com/mapfiles/ms/icons/${station.color}-dot.png`}
             />
           ))}
 
@@ -287,8 +285,9 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                   <div style={{fontWeight:'bold', fontSize:'0.95rem', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
                     {station.brand} <span style={{fontSize:'0.75rem', fontWeight:400, color:'#9ca3af'}}>({station.distance.toFixed(1)}m)</span>
                   </div>
+                  {/* THE FIX: Added the timestamp directly next to the address */}
                   <div style={{fontSize:'0.75rem', color:'#9ca3af', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
-                    {station.address}
+                    {station.address} {lastUpdated && `• Updated: ${lastUpdated}`}
                   </div>
                </div>
 
