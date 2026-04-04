@@ -1,6 +1,7 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Handles 'getAllPFSFuelPrices' schema & pagination limits
+   Authentication: Custom JSON payload to /generate_secret_token
+   Data: Batched fetch from /v1/prices
 */
 
 // GLOBAL CACHE (Persists while the server is "warm")
@@ -20,8 +21,7 @@ export async function onRequest(context) {
     }
 
     const cache = caches.default;
-    // Cache bust to v5 for the new data structure
-    const cacheKey = new Request("https://fuel-prices-gov-api-v5");
+    const cacheKey = new Request("https://fuel-prices-gov-api-v6");
     let response = await cache.match(cacheKey);
 
     if (response) {
@@ -29,42 +29,54 @@ export async function onRequest(context) {
     }
 
     try {
-        // 1. OAUTH TOKEN
+        // 1. FETCH OAUTH TOKEN (Using the exact JSON schema provided in the docs)
         const now = Date.now();
         if (!cachedToken || now >= tokenExpiry) {
             
-            const tokenBody = new URLSearchParams();
-            tokenBody.append("grant_type", "client_credentials");
-            tokenBody.append("client_id", CLIENT_ID);
-            tokenBody.append("client_secret", CLIENT_SECRET);
-            tokenBody.append("scope", "fuelfinder.read");
-
-            let tokenRes = await fetch("https://api.fuelfinder.service.gov.uk/oauth2/token", {
+            // Note: If this domain fails with a 1016, swap 'api.fuelfinder.service.gov.uk' 
+            // for 'www.fuel-finder.service.gov.uk'
+            const TOKEN_URL = "https://api.fuelfinder.service.gov.uk/api/v1/oauth/generate_secret_token";
+            
+            const tokenRes = await fetch(TOKEN_URL, {
                 method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: tokenBody
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                },
+                body: JSON.stringify({
+                    client_id: CLIENT_ID,
+                    client_secret: CLIENT_SECRET
+                })
             });
 
-            if (!tokenRes.ok) {
-                 tokenRes = await fetch("https://api.fuelfinder.service.gov.uk/v1/token", {
+            // If the /api/v1 path fails, try without /api (common in Azure API setups)
+            let finalTokenRes = tokenRes;
+            if (!tokenRes.ok && tokenRes.status === 404) {
+                 finalTokenRes = await fetch("https://api.fuelfinder.service.gov.uk/v1/oauth/generate_secret_token", {
                     method: "POST",
-                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                    body: tokenBody
+                    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                    body: JSON.stringify({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET })
                 });
             }
 
-            if (!tokenRes.ok) {
-                const errorText = await tokenRes.text();
-                throw new Error(`Auth Error (${tokenRes.status}): ${errorText}`);
+            if (!finalTokenRes.ok) {
+                const errorText = await finalTokenRes.text();
+                throw new Error(`Auth Error (${finalTokenRes.status}): ${errorText}`);
             }
 
-            const tokenData = await tokenRes.json();
-            cachedToken = tokenData.access_token;
-            tokenExpiry = now + ((tokenData.expires_in || 3600) - 60) * 1000;
+            const responseData = await finalTokenRes.json();
+            
+            // Extract from the { success: true, data: { access_token: "..." } } structure
+            if (!responseData.success || !responseData.data || !responseData.data.access_token) {
+                 throw new Error("API did not return a valid token object.");
+            }
+
+            cachedToken = responseData.data.access_token;
+            // Buffer the expiry by 60 seconds to prevent mid-flight expiration
+            tokenExpiry = now + ((responseData.data.expires_in || 3600) - 60) * 1000;
         }
 
-        // 2. FETCH FUEL DATA (Handle Pagination)
-        // The docs state max 500 per request. We fetch batches 1 through 5 in parallel (2,500 stations).
+        // 2. FETCH FUEL DATA (Handle Pagination 500 Limit)
         const batchesToFetch = [1, 2, 3, 4, 5];
         
         const batchPromises = batchesToFetch.map(batchNumber => 
@@ -81,30 +93,29 @@ export async function onRequest(context) {
 
         batchResults.forEach(data => {
             if (!data) return;
-            // Handle variations in the API wrapper
             const stations = data.data || data.prices || data || [];
             allRawStations = allRawStations.concat(stations);
         });
 
-        // 3. MAP DATA TO FRONTEND FORMAT (Using exact names from the docs)
+        // 3. MAP DATA TO FRONTEND FORMAT
         const mappedStations = allRawStations.map(station => {
             let e10 = null;
             let b7 = null;
 
-            // The docs specify prices are in an array called "fuel_prices"
             if (Array.isArray(station.fuel_prices)) {
                 station.fuel_prices.forEach(fp => {
                     if (fp.fuel_type === 'E10' || fp.fuel_type === 'E10_STANDARD' || fp.fuel_type === 'E5') e10 = fp.price;
                     if (fp.fuel_type === 'B7' || fp.fuel_type === 'B7_STANDARD') b7 = fp.price;
                 });
+            } else if (station.prices) {
+                e10 = station.prices.E10 || station.prices.e10 || station.e10_price;
+                b7 = station.prices.B7 || station.prices.b7 || station.b7_price;
             }
 
-            // Fallback for location data structure
             const lat = station.location?.latitude || station.latitude || station.lat || 0;
             const lng = station.location?.longitude || station.longitude || station.lng || 0;
 
             return {
-                // Using "node_id" and "trading_name" from the docs
                 site_id: station.node_id || station.site_id || station.id || Math.random().toString(36).substr(2, 9),
                 brand: station.trading_name || station.brand || station.operator || "Unknown",
                 address: station.address || "Unknown Address",
@@ -114,7 +125,6 @@ export async function onRequest(context) {
             };
         }).filter(s => (s.prices.E10 || s.prices.B7) && s.location.latitude !== 0);
 
-        // Remove any accidental duplicates across batches
         const uniqueStations = Array.from(new Map(mappedStations.map(s => [s.site_id, s])).values());
 
         // 4. CREATE RESPONSE
@@ -128,7 +138,7 @@ export async function onRequest(context) {
             headers: {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Origin": "*", 
-                "Cache-Control": "public, max-age=1800" // Cache for 30 mins
+                "Cache-Control": "public, max-age=1800"
             }
         });
 
