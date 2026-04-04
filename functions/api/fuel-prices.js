@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Production Ready: Auth + Address Hunter + Price Normalisation + Exact Timestamps
+   Production Ready: Lightning Fast Timestamps + Address Hunter
 */
 
 // GLOBAL CACHE
@@ -17,8 +17,8 @@ export async function onRequest(context) {
     }
 
     const cache = caches.default;
-    // Cache bust to v23 for exact timestamps
-    const cacheKey = new Request("https://fuel-prices-gov-api-v23");
+    // Cache bust to v24 for fast string comparison
+    const cacheKey = new Request("https://fuel-prices-gov-api-v24");
     let response = await cache.match(cacheKey);
 
     if (response) return response;
@@ -52,7 +52,6 @@ export async function onRequest(context) {
             ];
 
             let tokenRes = null;
-            let diagnostics = {}; 
 
             for (const ep of endpointsToTest) {
                 try {
@@ -79,7 +78,7 @@ export async function onRequest(context) {
             tokenExpiry = now + (expiresIn - 60) * 1000;
         }
 
-        // 2. FETCH ALL UK DATA
+        // 2. FETCH ALL UK DATA (Fast Chunked)
         const allLocations = [];
         const allPrices = {};
         
@@ -154,19 +153,16 @@ export async function onRequest(context) {
             const stationPricesArray = allPrices[sid] || [];
             let e10 = null, b7 = null;
 
-            let stationTimestamp = null;
+            let stationTimestamp = ""; // Use an empty string for ultra-fast comparison
 
             stationPricesArray.forEach(fp => {
                 if (fp.fuel_type === 'E10' || fp.fuel_type === 'E10_STANDARD' || fp.fuel_type === 'E5') e10 = formatPrice(fp.price);
                 if (fp.fuel_type === 'B7' || fp.fuel_type === 'B7_STANDARD') b7 = formatPrice(fp.price);
 
-                // EXACT KEYS EXTRACTED FROM RAW GOV DATA
-                const fpTime = fp.price_change_effective_timestamp || fp.price_last_updated || null;
-                if (fpTime) {
-                    // Grab the newest time if multiple fuels were updated at different times
-                    if (!stationTimestamp || new Date(fpTime) > new Date(stationTimestamp)) {
-                        stationTimestamp = fpTime;
-                    }
+                const fpTime = fp.price_change_effective_timestamp || fp.price_last_updated || "";
+                // Ultra-fast string comparison (works perfectly because ISO dates alphabetize chronologically)
+                if (fpTime > stationTimestamp) {
+                    stationTimestamp = fpTime;
                 }
             });
 
@@ -212,13 +208,13 @@ export async function onRequest(context) {
                 postcode: station.postcode || "",
                 location: { latitude: lat, longitude: lng },
                 prices: { E10: e10, B7: b7 },
-                last_updated: stationTimestamp
+                last_updated: stationTimestamp || null
             };
         }).filter(s => (s.prices.E10 || s.prices.B7) && s.location.latitude !== 0);
 
         const uniqueStations = Array.from(new Map(mappedStations.map(s => [s.site_id, s])).values());
 
-        // 5. SEND RESPONSE (Cleaned up for speed!)
+        // 5. SEND RESPONSE 
         const json = JSON.stringify({ 
             updated: new Date().toISOString(), 
             count: uniqueStations.length, 

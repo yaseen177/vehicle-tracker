@@ -27,7 +27,6 @@ const getBrandDomain = (brand) => {
   return overrides[b] || `${b}.com`;
 };
 
-// NEW HELPER: Formats the individual station's timestamp nicely
 const formatStationTime = (isoString) => {
     if (!isoString) return "Unknown";
     const d = new Date(isoString);
@@ -49,6 +48,9 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStation, setSelectedStation] = useState(null);
+  
+  // State to track which card has the "Directions" menu open
+  const [directionsOpenFor, setDirectionsOpenFor] = useState(null);
   
   const [appSyncTime, setAppSyncTime] = useState(null); 
   
@@ -73,9 +75,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         
         if (data.updated) {
             const dateObj = new Date(data.updated);
-            setAppSyncTime(dateObj.toLocaleString('en-GB', { 
-                hour: '2-digit', minute: '2-digit' 
-            }));
+            setAppSyncTime(dateObj.toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit' }));
         }
         
         setLoading(false);
@@ -128,7 +128,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             mapRef.current.setZoom(14);
           }
         },
-        () => alert("Unable to retrieve your location. Please ensure location permissions are granted.")
+        () => alert("Unable to retrieve your location.")
       );
     } else {
       alert("Geolocation is not supported by your browser.");
@@ -163,7 +163,15 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     return [];
   }, [stations, mapBounds, mapCenter, fuelType]);
 
-  if (!isLoaded) return <div className="spinner">Loading Maps...</div>;
+  // Loading Screen
+  if (loading || !isLoaded) return (
+      <div style={{display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', padding:'20px', textAlign:'center'}}>
+          <div style={{width:'40px', height:'40px', border:'4px solid rgba(255,255,255,0.1)', borderTop:'4px solid #3b82f6', borderRadius:'50%', animation:'spin 1s linear infinite', marginBottom:'20px'}}></div>
+          <h3 style={{margin:0}}>Syncing Government Database...</h3>
+          <p style={{color:'#9ca3af', fontSize:'0.9rem'}}>Downloading live prices for 8,000+ UK forecourts.</p>
+          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+      </div>
+  );
 
   return (
     <div className="fade-in" style={{height:'100%', display:'flex', flexDirection:'column', overflow:'hidden'}}>
@@ -250,7 +258,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
               position={{ lat: selectedStation.location.latitude, lng: selectedStation.location.longitude }}
               onCloseClick={() => setSelectedStation(null)}
             >
-              <div style={{color:'black', padding:'5px', minWidth:'150px'}}>
+              <div style={{color:'black', padding:'5px', minWidth:'180px'}}>
                 <h4 style={{margin:'0 0 5px 0', fontSize:'1rem', color:'#333'}}>{selectedStation.brand}</h4>
                 
                 <div style={{display:'flex', justifyContent:'space-between', marginBottom:'8px'}}>
@@ -266,12 +274,22 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                     Updated: {formatStationTime(selectedStation.last_updated)}
                 </div>
 
-                <button 
-                  onClick={() => setSelectedStation(null)}
-                  style={{width: '100%', background: '#333', color: 'white', border: 'none', padding: '4px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem'}}
-                >
-                  Close
-                </button>
+                <div style={{display:'flex', gap:'5px', marginTop:'10px'}}>
+                  {/* Google Maps Link */}
+                  <a 
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${selectedStation.location.latitude},${selectedStation.location.longitude}`}
+                    target="_blank" rel="noreferrer"
+                    style={{flex: 1, textAlign: 'center', background: '#3b82f6', color: 'white', textDecoration: 'none', padding: '6px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold'}}
+                  >
+                    Go
+                  </a>
+                  <button 
+                    onClick={() => setSelectedStation(null)}
+                    style={{flex: 1, background: '#e5e7eb', color: '#374151', border: 'none', padding: '6px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold'}}
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </InfoWindow>
           )}
@@ -288,53 +306,95 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
            {visibleStations.map((station, i) => (
              <div 
                key={i} 
-               onClick={() => {
-                  if (mapRef.current) {
-                      mapRef.current.panTo({ lat: station.location.latitude, lng: station.location.longitude });
-                      mapRef.current.setZoom(15); 
-                  }
-                  setSelectedStation(station);
-               }}
                className="bento-card"
                style={{
                  padding:'12px', 
                  display:'flex', 
-                 alignItems:'center', 
-                 gap:'12px',
-                 cursor:'pointer',
+                 flexDirection:'column',
                  borderLeft: `4px solid ${station.color === 'green' ? '#22c55e' : station.color === 'orange' ? '#f59e0b' : '#ef4444'}`,
                  background: selectedStation === station ? 'rgba(255,255,255,0.1)' : undefined
                }}
              >
-               <div style={{width:'40px', height:'40px', background:'white', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', padding:'4px', flexShrink:0}}>
-                  <img 
-                    src={`https://img.logo.dev/${getBrandDomain(station.brand)}?token=${logoKey}&size=60&format=png`} 
-                    style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}}
-                    onError={e => e.target.style.display='none'}
-                    alt={station.brand}
-                  />
-               </div>
+                <div 
+                    onClick={() => {
+                        if (mapRef.current) {
+                            mapRef.current.panTo({ lat: station.location.latitude, lng: station.location.longitude });
+                            mapRef.current.setZoom(15); 
+                        }
+                        setSelectedStation(station);
+                    }}
+                    style={{display:'flex', alignItems:'center', gap:'12px', cursor:'pointer'}}
+                >
+                    <div style={{width:'40px', height:'40px', background:'white', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', padding:'4px', flexShrink:0}}>
+                        <img 
+                            src={`https://img.logo.dev/${getBrandDomain(station.brand)}?token=${logoKey}&size=60&format=png`} 
+                            style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}}
+                            onError={e => e.target.style.display='none'}
+                            alt={station.brand}
+                        />
+                    </div>
 
-               <div style={{flex:1, minWidth:0}}>
-                  <div style={{fontWeight:'bold', fontSize:'0.95rem', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
-                    {station.brand} <span style={{fontSize:'0.75rem', fontWeight:400, color:'#9ca3af'}}>({station.distance.toFixed(1)}m)</span>
-                  </div>
-                  <div style={{fontSize:'0.75rem', color:'#9ca3af', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
-                    {station.address} 
-                  </div>
-                  <div style={{fontSize:'0.7rem', color:'#6b7280', marginTop:'2px'}}>
-                    Updated: {formatStationTime(station.last_updated)}
-                  </div>
-               </div>
+                    <div style={{flex:1, minWidth:0}}>
+                        <div style={{fontWeight:'bold', fontSize:'0.95rem', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
+                            {station.brand} <span style={{fontSize:'0.75rem', fontWeight:400, color:'#9ca3af'}}>({station.distance.toFixed(1)}m)</span>
+                        </div>
+                        <div style={{fontSize:'0.75rem', color:'#9ca3af', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
+                            {station.address} 
+                        </div>
+                        <div style={{fontSize:'0.7rem', color:'#6b7280', marginTop:'2px'}}>
+                            Updated: {formatStationTime(station.last_updated)}
+                        </div>
+                    </div>
 
-               <div style={{textAlign:'right'}}>
-                  <div style={{fontSize:'1.1rem', fontWeight:'bold', color: station.color === 'green' ? '#4ade80' : 'white'}}>
-                    {fuelType === 'E10' ? station.prices.E10 : station.prices.B7}p
-                  </div>
-                  <div style={{fontSize:'0.75rem', color:'#666'}}>
-                     {fuelType === 'E10' ? 'Diesel' : 'Unleaded'}: {fuelType === 'E10' ? station.prices.B7 : station.prices.E10}p
-                  </div>
-               </div>
+                    <div style={{textAlign:'right'}}>
+                        <div style={{fontSize:'1.1rem', fontWeight:'bold', color: station.color === 'green' ? '#4ade80' : 'white'}}>
+                            {fuelType === 'E10' ? station.prices.E10 : station.prices.B7}p
+                        </div>
+                        <div style={{fontSize:'0.75rem', color:'#666'}}>
+                            {fuelType === 'E10' ? 'Diesel' : 'Unleaded'}: {fuelType === 'E10' ? station.prices.B7 : station.prices.E10}p
+                        </div>
+                    </div>
+                </div>
+
+                {/* DIRECTIONS DROPDOWN TRIGGER */}
+                <div style={{marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'flex-end'}}>
+                    <button 
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setDirectionsOpenFor(directionsOpenFor === station.site_id ? null : station.site_id);
+                        }}
+                        style={{background: 'rgba(255,255,255,0.1)', border: 'none', color: '#9ca3af', padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'}}
+                    >
+                        Directions {directionsOpenFor === station.site_id ? '▲' : '▼'}
+                    </button>
+                </div>
+
+                {/* THE DIRECTIONS MENU */}
+                {directionsOpenFor === station.site_id && (
+                    <div style={{display: 'flex', gap: '8px', marginTop: '10px'}}>
+                        <a 
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${station.location.latitude},${station.location.longitude}`}
+                            target="_blank" rel="noreferrer"
+                            style={{flex: 1, textAlign: 'center', background: '#eaf3eb', color: '#1a73e8', textDecoration: 'none', padding: '8px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold'}}
+                        >
+                            Google Maps
+                        </a>
+                        <a 
+                            href={`http://maps.apple.com/?daddr=${station.location.latitude},${station.location.longitude}`}
+                            target="_blank" rel="noreferrer"
+                            style={{flex: 1, textAlign: 'center', background: '#f3f4f6', color: '#111827', textDecoration: 'none', padding: '8px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold'}}
+                        >
+                            Apple Maps
+                        </a>
+                        <a 
+                            href={`https://waze.com/ul?ll=${station.location.latitude},${station.location.longitude}&navigate=yes`}
+                            target="_blank" rel="noreferrer"
+                            style={{flex: 1, textAlign: 'center', background: '#e0f2fe', color: '#0369a1', textDecoration: 'none', padding: '8px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold'}}
+                        >
+                            Waze
+                        </a>
+                    </div>
+                )}
              </div>
            ))}
          </div>
