@@ -33,6 +33,16 @@ const formatStationTime = (isoString) => {
     return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 };
 
+// --- NEW RELIABILITY HELPER ---
+const getReliability = (isoString) => {
+    if (!isoString) return { text: "Unknown", color: "#6b7280", score: Infinity }; 
+    const diffHours = (new Date() - new Date(isoString)) / (1000 * 60 * 60);
+    
+    if (diffHours < 24) return { text: "Fresh", color: "#4ade80", score: diffHours }; // Green (< 1 day)
+    if (diffHours < 72) return { text: "Recent", color: "#f59e0b", score: diffHours }; // Orange (< 3 days)
+    return { text: "Stale", color: "#ef4444", score: diffHours }; // Red (> 3 days)
+};
+
 const getOpenStatus = (openingTimes) => {
     if (!openingTimes || !openingTimes.usual_days) return null;
 
@@ -113,12 +123,10 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [loading, setLoading] = useState(true);
   const [selectedStation, setSelectedStation] = useState(null);
   
-  // NEW PROGRESS STATES
   const [progress, setProgress] = useState(0);
   const [isSyncing, setIsSyncing] = useState(true);
 
   const [directionsOpenFor, setDirectionsOpenFor] = useState(null);
-  
   const [appSyncTime, setAppSyncTime] = useState(null); 
   
   const [mapBounds, setMapBounds] = useState(null);
@@ -126,6 +134,10 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
 
   const [postcodeQuery, setPostcodeQuery] = useState("");
   const [fuelType, setFuelType] = useState('E10'); 
+
+  // --- NEW SORT & FILTER STATES ---
+  const [sortBy, setSortBy] = useState('price'); // 'price', 'distance', 'reliability'
+  const [filterBrand, setFilterBrand] = useState('All');
 
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
@@ -142,13 +154,11 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         
         while (batch <= maxBatches && !hitEnd && isMounted) {
             try {
-                // Fetch only one batch at a time for instant UI feedback
                 const res = await fetch(`/api/fuel-prices?batch=${batch}&t=${new Date().getTime()}`); 
                 const data = await res.json();
                 
                 if (data.stations && data.stations.length > 0) {
                     setStations(prev => {
-                        // Prevent duplicates when merging arrays
                         const newMap = new Map();
                         prev.forEach(s => newMap.set(s.site_id, s));
                         data.stations.forEach(s => newMap.set(s.site_id, s));
@@ -168,7 +178,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                 console.error(`Failed to load batch ${batch}`, err);
             }
             
-            // Allow UI to render the map immediately after the very first batch arrives
             if (batch === 1) setLoading(false);
             
             setProgress(Math.round((batch / maxBatches) * 100));
@@ -176,7 +185,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         }
         
         if (isMounted) setIsSyncing(false);
-        if (isMounted && loading) setLoading(false); // Failsafe
+        if (isMounted && loading) setLoading(false); 
     }
     
     fetchBatches();
@@ -232,11 +241,19 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     }
   };
 
+  // --- DYNAMIC BRANDS LIST ---
+  const availableBrands = useMemo(() => {
+    const brands = new Set(stations.map(s => s.brand));
+    return ['All', ...Array.from(brands).sort()];
+  }, [stations]);
+
+  // --- UPDATED VISIBLE STATIONS WITH SORTING & FILTERING ---
   const visibleStations = useMemo(() => {
     if (!stations.length || !mapBounds) return [];
     
     const local = stations.filter(s => {
       if (!s.prices || !s.prices[fuelType]) return false; 
+      if (filterBrand !== 'All' && s.brand !== filterBrand) return false; // Apply Brand Filter
       const stationLoc = new window.google.maps.LatLng(s.location.latitude, s.location.longitude);
       return mapBounds.contains(stationLoc);
     });
@@ -247,18 +264,25 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       const processed = local.map(s => {
         const price = s.prices[fuelType];
         const dist = getDistance(mapCenter.lat, mapCenter.lng, s.location.latitude, s.location.longitude);
+        const reliability = getReliability(s.last_updated);
         
         let color = "red";
         if (price < avgPrice - 0.5) color = "green";      
         else if (price < avgPrice + 0.5) color = "orange"; 
         
-        return { ...s, color, distance: dist };
+        return { ...s, color, distance: dist, reliability };
       });
 
-      return processed.sort((a, b) => a.prices[fuelType] - b.prices[fuelType]);
+      // Apply User Selected Sorting
+      return processed.sort((a, b) => {
+        if (sortBy === 'price') return a.prices[fuelType] - b.prices[fuelType];
+        if (sortBy === 'distance') return a.distance - b.distance;
+        if (sortBy === 'reliability') return a.reliability.score - b.reliability.score;
+        return 0;
+      });
     }
     return [];
-  }, [stations, mapBounds, mapCenter, fuelType]);
+  }, [stations, mapBounds, mapCenter, fuelType, filterBrand, sortBy]);
 
   if (loading || !isLoaded) return (
       <div style={{display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', padding:'20px', textAlign:'center'}}>
@@ -295,7 +319,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         </div>
 
         <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
-           
            <div style={{display:'flex', background:'rgba(255,255,255,0.1)', borderRadius:'8px', padding:'2px'}}>
               <button 
                 onClick={() => setFuelType('E10')}
@@ -321,7 +344,29 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
            </div>
         </div>
 
-        {/* --- NEW PROGRESS BAR --- */}
+        {/* --- NEW SORTING & FILTERING BAR --- */}
+        <div style={{display:'flex', gap:'8px', flexWrap: 'wrap', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px'}}>
+            <select 
+                value={sortBy} 
+                onChange={(e) => setSortBy(e.target.value)}
+                style={{flex: 1, padding:'8px', borderRadius:'6px', border:'1px solid var(--border)', background:'rgba(255,255,255,0.05)', color:'white', fontSize:'0.8rem', cursor:'pointer'}}
+            >
+                <option value="price">Sort by: Price (Lowest)</option>
+                <option value="distance">Sort by: Distance (Nearest)</option>
+                <option value="reliability">Sort by: Reliability (Most Recent)</option>
+            </select>
+            
+            <select 
+                value={filterBrand} 
+                onChange={(e) => setFilterBrand(e.target.value)}
+                style={{flex: 1, padding:'8px', borderRadius:'6px', border:'1px solid var(--border)', background:'rgba(255,255,255,0.05)', color:'white', fontSize:'0.8rem', cursor:'pointer'}}
+            >
+                {availableBrands.map(b => (
+                    <option key={b} value={b}>{b === 'All' ? 'All Brands' : b}</option>
+                ))}
+            </select>
+        </div>
+
         {isSyncing && (
             <div style={{marginTop: '4px'}}>
                 <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#9ca3af', marginBottom: '4px'}}>
@@ -379,8 +424,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                   </div>
                 </div>
                 
-                <div style={{fontSize: '0.7rem', color: '#666', marginBottom: '8px'}}>
-                    Updated: {formatStationTime(selectedStation.last_updated)}
+                <div style={{fontSize: '0.7rem', color: '#666', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px'}}>
+                    <span>Updated: {formatStationTime(selectedStation.last_updated)}</span>
                 </div>
 
                 <div style={{display:'flex', gap:'5px', marginTop:'10px'}}>
@@ -407,7 +452,9 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       {/* --- LIST --- */}
       <div style={{flex:1, overflowY:'auto', paddingBottom:'20px', marginTop:'10px'}}>
          <div style={{fontSize:'0.85rem', color:'#9ca3af', marginBottom:'8px', paddingLeft:'4px'}}>
-            Prices for visible area (Sorted by cheapest)
+            {sortBy === 'price' && 'Prices for visible area (Sorted by cheapest)'}
+            {sortBy === 'distance' && 'Prices for visible area (Sorted by nearest)'}
+            {sortBy === 'reliability' && 'Prices for visible area (Sorted by recently updated)'}
          </div>
 
          <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
@@ -452,8 +499,21 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                             <div style={{fontSize:'0.75rem', color:'#9ca3af', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
                                 {station.address} 
                             </div>
-                            <div style={{fontSize:'0.7rem', color:'#6b7280', marginTop:'2px'}}>
-                                Updated: {formatStationTime(station.last_updated)}
+                            
+                            {/* NEW RELIABILITY BADGE DISPLAY */}
+                            <div style={{fontSize:'0.7rem', color:'#6b7280', marginTop:'4px', display:'flex', alignItems:'center', gap:'6px'}}>
+                                <span>Updated: {formatStationTime(station.last_updated)}</span>
+                                <span style={{
+                                    background: `${station.reliability.color}20`, 
+                                    color: station.reliability.color, 
+                                    padding: '2px 6px', 
+                                    borderRadius: '4px', 
+                                    fontWeight: 'bold', 
+                                    fontSize: '0.65rem',
+                                    border: `1px solid ${station.reliability.color}40`
+                                }}>
+                                    {station.reliability.text}
+                                </span>
                             </div>
                         </div>
 
@@ -470,12 +530,10 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                     {/* STATUS & DIRECTIONS ROW */}
                     <div style={{marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                         
-                        {/* OPEN / CLOSED STATUS */}
                         <div style={{fontSize: '0.8rem', fontWeight: 'bold', color: openStatus ? openStatus.color : '#9ca3af'}}>
                             {openStatus ? openStatus.text : ""}
                         </div>
 
-                        {/* DIRECTIONS DROPDOWN TRIGGER */}
                         <button 
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -487,7 +545,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                         </button>
                     </div>
 
-                    {/* THE DIRECTIONS MENU */}
                     {directionsOpenFor === station.site_id && (
                         <div style={{display: 'flex', gap: '8px', marginTop: '10px'}}>
                             <a 
