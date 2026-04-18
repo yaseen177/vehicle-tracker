@@ -33,7 +33,6 @@ const formatStationTime = (isoString) => {
     return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 };
 
-// --- NEW INTELLIGENT OPENING HOURS HELPER ---
 const getOpenStatus = (openingTimes) => {
     if (!openingTimes || !openingTimes.usual_days) return null;
 
@@ -53,15 +52,13 @@ const getOpenStatus = (openingTimes) => {
     const todayHours = openingTimes.usual_days[currentDayStr];
     if (!todayHours) return null;
 
-    // 1. Is it a true 24 hour station?
     if (todayHours.is_24_hours) {
-        return { text: "Open 24 Hours", color: "#4ade80" }; // Green
+        return { text: "Open 24 Hours", color: "#4ade80" }; 
     }
 
     const openMins = parseTime(todayHours.open);
     const closeMins = parseTime(todayHours.close);
 
-    // 2. Is it permanently closed today? (e.g. opens 00:00, closes 00:00)
     if (openMins === 0 && closeMins === 0) {
         let nextDayName = "Tomorrow";
         let nextOpenTime = "00:00";
@@ -75,10 +72,9 @@ const getOpenStatus = (openingTimes) => {
                 break;
             }
         }
-        return { text: `Closed • Opens ${nextOpenTime} ${nextDayName}`, color: "#ef4444" }; // Red
+        return { text: `Closed • Opens ${nextOpenTime} ${nextDayName}`, color: "#ef4444" }; 
     }
 
-    // 3. Determine if currently open (handling overnight hours correctly)
     let isOpen = false;
     if (closeMins <= openMins) { 
         isOpen = currentMins >= openMins || currentMins < closeMins;
@@ -100,7 +96,6 @@ const getOpenStatus = (openingTimes) => {
         }
     }
 };
-// ---------------------------------------------
 
 const mapStyles = [
   { elementType: "geometry", stylers: [{ color: "#f5f5f5" }] },
@@ -118,6 +113,10 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [loading, setLoading] = useState(true);
   const [selectedStation, setSelectedStation] = useState(null);
   
+  // NEW PROGRESS STATES
+  const [progress, setProgress] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(true);
+
   const [directionsOpenFor, setDirectionsOpenFor] = useState(null);
   
   const [appSyncTime, setAppSyncTime] = useState(null); 
@@ -134,25 +133,53 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   });
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const res = await fetch(`/api/fuel-prices?t=${new Date().getTime()}`); 
-        const data = await res.json();
+    let isMounted = true;
+    
+    async function fetchBatches() {
+        const maxBatches = 20;
+        let batch = 1;
+        let hitEnd = false;
         
-        setStations(data.stations || []);
-        
-        if (data.updated) {
-            const dateObj = new Date(data.updated);
-            setAppSyncTime(dateObj.toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+        while (batch <= maxBatches && !hitEnd && isMounted) {
+            try {
+                // Fetch only one batch at a time for instant UI feedback
+                const res = await fetch(`/api/fuel-prices?batch=${batch}&t=${new Date().getTime()}`); 
+                const data = await res.json();
+                
+                if (data.stations && data.stations.length > 0) {
+                    setStations(prev => {
+                        // Prevent duplicates when merging arrays
+                        const newMap = new Map();
+                        prev.forEach(s => newMap.set(s.site_id, s));
+                        data.stations.forEach(s => newMap.set(s.site_id, s));
+                        return Array.from(newMap.values());
+                    });
+                    
+                    if (data.updated && batch === 1) {
+                        const dateObj = new Date(data.updated);
+                        setAppSyncTime(dateObj.toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+                    }
+                }
+                
+                if (data.hitEnd || (data.stations && data.stations.length === 0)) {
+                    hitEnd = true;
+                }
+            } catch (err) {
+                console.error(`Failed to load batch ${batch}`, err);
+            }
+            
+            // Allow UI to render the map immediately after the very first batch arrives
+            if (batch === 1) setLoading(false);
+            
+            setProgress(Math.round((batch / maxBatches) * 100));
+            batch++;
         }
         
-        setLoading(false);
-      } catch (err) {
-        console.error("Failed to load fuel data", err);
-        setLoading(false);
-      }
+        if (isMounted) setIsSyncing(false);
+        if (isMounted && loading) setLoading(false); // Failsafe
     }
-    fetchData();
+    
+    fetchBatches();
     
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -160,6 +187,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         () => console.warn("GPS Permission denied")
       );
     }
+    
+    return () => { isMounted = false; };
   }, []);
 
   const onMapIdle = useCallback(() => {
@@ -290,8 +319,21 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
              <span>{visibleStations.length} stations in view</span>
              {appSyncTime && <span style={{fontSize: '0.7rem', opacity: 0.8}}>App Synced: {appSyncTime}</span>}
            </div>
-
         </div>
+
+        {/* --- NEW PROGRESS BAR --- */}
+        {isSyncing && (
+            <div style={{marginTop: '4px'}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#9ca3af', marginBottom: '4px'}}>
+                    <span>Syncing national database...</span>
+                    <span>{progress}%</span>
+                </div>
+                <div style={{height: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden'}}>
+                    <div style={{height: '100%', width: `${progress}%`, background: '#3b82f6', transition: 'width 0.3s ease'}}></div>
+                </div>
+            </div>
+        )}
+
       </div>
 
       {/* --- MAP --- */}

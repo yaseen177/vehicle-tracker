@@ -1,6 +1,6 @@
 /* CLOUDFLARE PAGES FUNCTION 
    UK Government Fuel Finder API Integration
-   Production Ready: Lightning Fast Timestamps + Address Hunter + Opening Hours
+   Production Ready: Lightning Fast Timestamps + Address Hunter + Opening Hours + Dynamic Batching
 */
 
 // GLOBAL CACHE
@@ -17,8 +17,14 @@ export async function onRequest(context) {
     }
 
     const cache = caches.default;
-    // Cache bust to v25 to include opening times
-    const cacheKey = new Request("https://fuel-prices-gov-api-v25");
+    
+    // NEW: Check for specific batch request from frontend
+    const url = new URL(context.request.url);
+    const batchParam = url.searchParams.get('batch');
+    
+    // Cache bust to v26 to handle the new chunking logic
+    const cacheKeyString = `https://fuel-prices-gov-api-v26-${batchParam || 'all'}`;
+    const cacheKey = new Request(cacheKeyString);
     let response = await cache.match(cacheKey);
 
     if (response) return response;
@@ -78,15 +84,23 @@ export async function onRequest(context) {
             tokenExpiry = now + (expiresIn - 60) * 1000;
         }
 
-        // 2. FETCH ALL UK DATA
+        // 2. FETCH DATA (Batched or All)
+        let batchesToFetch = [];
+        if (batchParam) {
+            batchesToFetch = [parseInt(batchParam, 10)];
+        } else {
+            batchesToFetch = Array.from({length: 20}, (_, i) => i + 1);
+        }
+
         const allLocations = [];
         const allPrices = {};
+        let hitEnd = false;
         
-        const batches = Array.from({length: 20}, (_, i) => i + 1);
-        const chunkSize = 3; 
+        // Increased chunk size if falling back to 'fetch all'
+        const chunkSize = batchParam ? 1 : 5; 
 
-        for (let i = 0; i < batches.length; i += chunkSize) {
-            const chunk = batches.slice(i, i + chunkSize);
+        for (let i = 0; i < batchesToFetch.length; i += chunkSize) {
+            const chunk = batchesToFetch.slice(i, i + chunkSize);
             
             const chunkPromises = chunk.map(async (batch) => {
                 const fetchOptions = { headers: { ...COMMON_HEADERS, "Authorization": `Bearer ${cachedToken}` } };
@@ -108,7 +122,6 @@ export async function onRequest(context) {
 
             const results = await Promise.all(chunkPromises);
 
-            let hitEnd = false;
             for (const res of results) {
                 if (!res) continue;
                 if (res.locs.length === 0) hitEnd = true;
@@ -208,7 +221,7 @@ export async function onRequest(context) {
                 location: { latitude: lat, longitude: lng },
                 prices: { E10: e10, B7: b7 },
                 last_updated: stationTimestamp || null,
-                opening_times: station.opening_times || null // THE NEW DATA LINE
+                opening_times: station.opening_times || null 
             };
         }).filter(s => (s.prices.E10 || s.prices.B7) && s.location.latitude !== 0);
 
@@ -218,7 +231,8 @@ export async function onRequest(context) {
         const json = JSON.stringify({ 
             updated: new Date().toISOString(), 
             count: uniqueStations.length, 
-            stations: uniqueStations 
+            stations: uniqueStations,
+            hitEnd: hitEnd || uniqueStations.length === 0 // Allow frontend to know when to stop requesting
         });
 
         response = new Response(json, { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=1800" } });
