@@ -22,7 +22,8 @@ const getBrandDomain = (brand) => {
     'texaco': 'texaco.com', 'sainsburys': 'sainsburys.co.uk',
     'tesco': 'tesco.com', 'asda': 'asda.com', 'morrisons': 'morrisons.com',
     'jet': 'jetlocal.co.uk', 'applegreen': 'applegreenstores.com',
-    'gulf': 'gulfretail.co.uk', 'costco': 'costco.co.uk'
+    'gulf': 'gulfretail.co.uk', 'costco': 'costco.co.uk',
+    'co-op': 'coop.co.uk'
   };
   return overrides[b] || `${b}.com`;
 };
@@ -33,14 +34,14 @@ const formatStationTime = (isoString) => {
     return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 };
 
-// --- NEW RELIABILITY HELPER ---
+// --- UPDATED RELIABILITY HELPER ---
 const getReliability = (isoString) => {
     if (!isoString) return { text: "Unknown", color: "#6b7280", score: Infinity }; 
     const diffHours = (new Date() - new Date(isoString)) / (1000 * 60 * 60);
     
-    if (diffHours < 24) return { text: "Fresh", color: "#4ade80", score: diffHours }; // Green (< 1 day)
-    if (diffHours < 72) return { text: "Recent", color: "#f59e0b", score: diffHours }; // Orange (< 3 days)
-    return { text: "Stale", color: "#ef4444", score: diffHours }; // Red (> 3 days)
+    if (diffHours < 24) return { text: "High Reliability", color: "#4ade80", score: diffHours }; // Green (< 1 day)
+    if (diffHours < 72) return { text: "Medium Reliability", color: "#f59e0b", score: diffHours }; // Orange (< 3 days)
+    return { text: "Low Reliability", color: "#ef4444", score: diffHours }; // Red (> 3 days)
 };
 
 const getOpenStatus = (openingTimes) => {
@@ -135,9 +136,10 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [postcodeQuery, setPostcodeQuery] = useState("");
   const [fuelType, setFuelType] = useState('E10'); 
 
-  // --- NEW SORT & FILTER STATES ---
+  // --- FILTER & SORT STATES ---
   const [sortBy, setSortBy] = useState('price'); // 'price', 'distance', 'reliability'
   const [filterBrand, setFilterBrand] = useState('All');
+  const [searchName, setSearchName] = useState(''); // NEW text search
 
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
@@ -241,19 +243,22 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     }
   };
 
-  // --- DYNAMIC BRANDS LIST ---
-  const availableBrands = useMemo(() => {
-    const brands = new Set(stations.map(s => s.brand));
-    return ['All', ...Array.from(brands).sort()];
-  }, [stations]);
-
-  // --- UPDATED VISIBLE STATIONS WITH SORTING & FILTERING ---
+  // --- UPDATED VISIBLE STATIONS WITH ADVANCED SORTING & FILTERING ---
   const visibleStations = useMemo(() => {
     if (!stations.length || !mapBounds) return [];
     
     const local = stations.filter(s => {
       if (!s.prices || !s.prices[fuelType]) return false; 
-      if (filterBrand !== 'All' && s.brand !== filterBrand) return false; // Apply Brand Filter
+      
+      // 1. Dropdown Brand Filter
+      if (filterBrand !== 'All' && s.brand !== filterBrand) return false; 
+      
+      // 2. Text Search Filter (Case insensitive)
+      if (searchName.trim() !== '') {
+          if (!s.brand.toLowerCase().includes(searchName.toLowerCase())) return false;
+      }
+
+      // 3. Map Bounds
       const stationLoc = new window.google.maps.LatLng(s.location.latitude, s.location.longitude);
       return mapBounds.contains(stationLoc);
     });
@@ -282,7 +287,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       });
     }
     return [];
-  }, [stations, mapBounds, mapCenter, fuelType, filterBrand, sortBy]);
+  }, [stations, mapBounds, mapCenter, fuelType, filterBrand, searchName, sortBy]);
 
   if (loading || !isLoaded) return (
       <div style={{display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', padding:'20px', textAlign:'center'}}>
@@ -303,7 +308,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         
         <div style={{display:'flex', gap:'8px'}}>
           <input 
-            placeholder="Search location..." 
+            placeholder="Search map location (e.g. London)" 
             value={postcodeQuery}
             onChange={(e) => setPostcodeQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -344,12 +349,14 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
            </div>
         </div>
 
-        {/* --- NEW SORTING & FILTERING BAR --- */}
+        {/* --- UPDATED SORTING & FILTERING BAR --- */}
         <div style={{display:'flex', gap:'8px', flexWrap: 'wrap', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px'}}>
+            
+            {/* FIXED SELECT CSS - Uses a solid dark background so the white text is readable across all browsers */}
             <select 
                 value={sortBy} 
                 onChange={(e) => setSortBy(e.target.value)}
-                style={{flex: 1, padding:'8px', borderRadius:'6px', border:'1px solid var(--border)', background:'rgba(255,255,255,0.05)', color:'white', fontSize:'0.8rem', cursor:'pointer'}}
+                style={{flex: 1, padding:'8px', borderRadius:'6px', border:'1px solid var(--border)', background:'#1f2937', color:'white', fontSize:'0.8rem', cursor:'pointer'}}
             >
                 <option value="price">Sort by: Price (Lowest)</option>
                 <option value="distance">Sort by: Distance (Nearest)</option>
@@ -359,12 +366,31 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             <select 
                 value={filterBrand} 
                 onChange={(e) => setFilterBrand(e.target.value)}
-                style={{flex: 1, padding:'8px', borderRadius:'6px', border:'1px solid var(--border)', background:'rgba(255,255,255,0.05)', color:'white', fontSize:'0.8rem', cursor:'pointer'}}
+                style={{flex: 1, padding:'8px', borderRadius:'6px', border:'1px solid var(--border)', background:'#1f2937', color:'white', fontSize:'0.8rem', cursor:'pointer'}}
             >
-                {availableBrands.map(b => (
-                    <option key={b} value={b}>{b === 'All' ? 'All Brands' : b}</option>
-                ))}
+                <option value="All">All Major Brands</option>
+                <option value="Asda">Asda</option>
+                <option value="BP">BP</option>
+                <option value="Co-op">Co-op</option>
+                <option value="Costco">Costco</option>
+                <option value="Esso">Esso</option>
+                <option value="Gulf">Gulf</option>
+                <option value="Jet">Jet</option>
+                <option value="Morrisons">Morrisons</option>
+                <option value="Sainsburys">Sainsbury's</option>
+                <option value="Shell">Shell</option>
+                <option value="Tesco">Tesco</option>
+                <option value="Texaco">Texaco</option>
             </select>
+            
+            {/* NEW TEXT SEARCH INPUT FOR SPECIFIC GARAGES */}
+            <input 
+                type="text"
+                placeholder="Search specific garage name..."
+                value={searchName}
+                onChange={(e) => setSearchName(e.target.value)}
+                style={{flex: '1 1 100%', padding:'8px', borderRadius:'6px', border:'1px solid var(--border)', background:'rgba(255,255,255,0.05)', color:'white', fontSize:'0.8rem'}}
+            />
         </div>
 
         {isSyncing && (
@@ -454,8 +480,14 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
          <div style={{fontSize:'0.85rem', color:'#9ca3af', marginBottom:'8px', paddingLeft:'4px'}}>
             {sortBy === 'price' && 'Prices for visible area (Sorted by cheapest)'}
             {sortBy === 'distance' && 'Prices for visible area (Sorted by nearest)'}
-            {sortBy === 'reliability' && 'Prices for visible area (Sorted by recently updated)'}
+            {sortBy === 'reliability' && 'Prices for visible area (Sorted by highest reliability)'}
          </div>
+
+         {visibleStations.length === 0 && (
+             <div style={{padding: '20px', textAlign: 'center', color: '#9ca3af', fontSize: '0.9rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px dashed rgba(255,255,255,0.1)'}}>
+                 No stations found matching your filters. Try moving the map or adjusting your search.
+             </div>
+         )}
 
          <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
            {visibleStations.map((station, i) => {
@@ -500,8 +532,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                                 {station.address} 
                             </div>
                             
-                            {/* NEW RELIABILITY BADGE DISPLAY */}
-                            <div style={{fontSize:'0.7rem', color:'#6b7280', marginTop:'4px', display:'flex', alignItems:'center', gap:'6px'}}>
+                            {/* RELIABILITY BADGE */}
+                            <div style={{fontSize:'0.7rem', color:'#6b7280', marginTop:'4px', display:'flex', alignItems:'center', gap:'6px', flexWrap: 'wrap'}}>
                                 <span>Updated: {formatStationTime(station.last_updated)}</span>
                                 <span style={{
                                     background: `${station.reliability.color}20`, 
@@ -510,7 +542,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                                     borderRadius: '4px', 
                                     fontWeight: 'bold', 
                                     fontSize: '0.65rem',
-                                    border: `1px solid ${station.reliability.color}40`
+                                    border: `1px solid ${station.reliability.color}40`,
+                                    whiteSpace: 'nowrap'
                                 }}>
                                     {station.reliability.text}
                                 </span>
