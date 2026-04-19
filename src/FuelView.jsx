@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
-import { Search, MapPin, Info, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'; // NEW: Imported icons
+import { Search, MapPin, Info, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'; 
 
 const containerStyle = { width: '100%', height: '45vh', minHeight: '300px' };
 
@@ -151,15 +151,14 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     
     async function fetchBatches() {
         const maxBatches = 20;
-        let batch = 1;
-        let hitEnd = false;
+        let loadedCount = 0;
         
-        while (batch <= maxBatches && !hitEnd && isMounted) {
+        const fetchBatch = async (batch) => {
             try {
                 const res = await fetch(`/api/fuel-prices?batch=${batch}&t=${new Date().getTime()}`); 
                 const data = await res.json();
                 
-                if (data.stations && data.stations.length > 0) {
+                if (data.stations && data.stations.length > 0 && isMounted) {
                     setStations(prev => {
                         const newMap = new Map();
                         prev.forEach(s => newMap.set(s.site_id, s));
@@ -167,24 +166,27 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                         return Array.from(newMap.values());
                     });
                     
-                    if (data.updated && batch === 1) {
+                    if (data.updated && !appSyncTime) {
                         const dateObj = new Date(data.updated);
                         setAppSyncTime(dateObj.toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit' }));
                     }
                 }
-                
-                if (data.hitEnd || (data.stations && data.stations.length === 0)) {
-                    hitEnd = true;
-                }
             } catch (err) {
                 console.error(`Failed to load batch ${batch}`, err);
+            } finally {
+                if (isMounted) {
+                    loadedCount++;
+                    setProgress(Math.round((loadedCount / maxBatches) * 100));
+                    // Dismiss the loading screen immediately once the FIRST batch returns
+                    if (loadedCount >= 1) setLoading(false); 
+                }
             }
-            
-            if (batch === 1) setLoading(false);
-            
-            setProgress(Math.round((batch / maxBatches) * 100));
-            batch++;
-        }
+        };
+
+        // NEW: Map array to launch all 20 fetch requests concurrently. 
+        const promises = Array.from({ length: maxBatches }, (_, i) => fetchBatch(i + 1));
+        
+        await Promise.all(promises);
         
         if (isMounted) setIsSyncing(false);
         if (isMounted && loading) setLoading(false); 
@@ -373,7 +375,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                     onChange={(e) => setSortBy(e.target.value)}
                     style={{flex: 1, padding:'8px', borderRadius:'6px', border:'1px solid var(--border)', background:'#1f2937', color:'white', fontSize:'0.8rem', cursor:'pointer'}}
                 >
-                    {/* TEXT UPDATED to remove emoji for clean styling inside a native <select> */}
                     <option value="smart">Sort by: Smart Sort (Best Overall)</option>
                     <option value="price">Sort by: Price (Lowest)</option>
                     <option value="distance">Sort by: Distance (Nearest)</option>

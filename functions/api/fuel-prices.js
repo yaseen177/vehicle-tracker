@@ -18,11 +18,9 @@ export async function onRequest(context) {
 
     const cache = caches.default;
     
-    // NEW: Check for specific batch request from frontend
     const url = new URL(context.request.url);
     const batchParam = url.searchParams.get('batch');
     
-    // Cache bust to v26 to handle the new chunking logic
     const cacheKeyString = `https://fuel-prices-gov-api-v26-${batchParam || 'all'}`;
     const cacheKey = new Request(cacheKeyString);
     let response = await cache.match(cacheKey);
@@ -36,7 +34,7 @@ export async function onRequest(context) {
     };
 
     try {
-        // 1. OAUTH TOKEN HUNTER
+        // 1. OAUTH TOKEN HUNTER (Now fully concurrent for zero latency)
         const now = Date.now();
         if (!cachedToken || now >= tokenExpiry) {
             const formBody = new URLSearchParams();
@@ -59,17 +57,21 @@ export async function onRequest(context) {
 
             let tokenRes = null;
 
-            for (const ep of endpointsToTest) {
-                try {
+            try {
+                // Fire all authentication requests simultaneously. 
+                // Promise.any resolves instantly when the FIRST successful response comes back.
+                tokenRes = await Promise.any(endpointsToTest.map(async (ep) => {
                     const isForm = ep.type === "form";
                     const res = await fetch(ep.url, {
                         method: "POST",
                         headers: { ...COMMON_HEADERS, "Content-Type": isForm ? "application/x-www-form-urlencoded" : "application/json" },
                         body: isForm ? formBody : jsonBody
                     });
-                    
-                    if (res.ok) { tokenRes = res; break; }
-                } catch (e) {}
+                    if (res.ok) return res;
+                    throw new Error("Endpoint failed");
+                }));
+            } catch (aggregateError) {
+                // Catches if ALL endpoints fail
             }
 
             if (!tokenRes || !tokenRes.ok) throw new Error("Auth Failed on all paths.");
@@ -96,7 +98,6 @@ export async function onRequest(context) {
         const allPrices = {};
         let hitEnd = false;
         
-        // Increased chunk size if falling back to 'fetch all'
         const chunkSize = batchParam ? 1 : 5; 
 
         for (let i = 0; i < batchesToFetch.length; i += chunkSize) {
@@ -232,7 +233,7 @@ export async function onRequest(context) {
             updated: new Date().toISOString(), 
             count: uniqueStations.length, 
             stations: uniqueStations,
-            hitEnd: hitEnd || uniqueStations.length === 0 // Allow frontend to know when to stop requesting
+            hitEnd: hitEnd || uniqueStations.length === 0 
         });
 
         response = new Response(json, { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=1800" } });
