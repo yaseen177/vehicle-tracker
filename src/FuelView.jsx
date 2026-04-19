@@ -157,36 +157,42 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         let hitEnd = false; // FIX: Allows early exit if the API runs out of batches
         
         const fetchBatch = async (batch) => {
-            try {
-                const res = await fetch(`/api/fuel-prices?batch=${batch}&t=${new Date().getTime()}`); 
-                if (!res.ok) return; 
-                const data = await res.json();
-                
-                if (data.hitEnd) hitEnd = true;
+          console.log(`[Frontend] 📡 Requesting Batch ${batch}...`); // NEW LOG
+          try {
+              const res = await fetch(`/api/fuel-prices?batch=${batch}&t=${new Date().getTime()}`); 
+              if (!res.ok) {
+                  console.error(`[Frontend] ❌ Batch ${batch} failed with status: ${res.status}`); // NEW LOG
+                  return; 
+              }
+              const data = await res.json();
+              
+              console.log(`[Frontend] ✅ Batch ${batch} returned ${data.stations?.length || 0} stations. (HitEnd: ${data.hitEnd})`); // NEW LOG
+              
+              if (data.hitEnd) hitEnd = true;
 
-                if (data.stations && data.stations.length > 0 && isMounted) {
-                    setStations(prev => {
-                        const newMap = new Map();
-                        prev.forEach(s => newMap.set(s.site_id, s));
-                        data.stations.forEach(s => newMap.set(s.site_id, s));
-                        return Array.from(newMap.values());
-                    });
-                    
-                    if (data.updated && !appSyncTime) {
-                        const dateObj = new Date(data.updated);
-                        setAppSyncTime(dateObj.toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit' }));
-                    }
-                }
-            } catch (err) {
-                console.error(`Failed to load batch ${batch}`, err);
-            } finally {
-                if (isMounted) {
-                    loadedCount++;
-                    setProgress(Math.round((loadedCount / maxBatches) * 100));
-                    if (loadedCount >= 1) setLoading(false); 
-                }
-            }
-        };
+              if (data.stations && data.stations.length > 0 && isMounted) {
+                  setStations(prev => {
+                      const newMap = new Map();
+                      prev.forEach(s => newMap.set(s.site_id, s));
+                      data.stations.forEach(s => newMap.set(s.site_id, s));
+                      return Array.from(newMap.values());
+                  });
+                  
+                  if (data.updated && !appSyncTime) {
+                      const dateObj = new Date(data.updated);
+                      setAppSyncTime(dateObj.toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+                  }
+              }
+          } catch (err) {
+              console.error(`[Frontend] 🚨 Error processing batch ${batch}:`, err); // NEW LOG
+          } finally {
+              if (isMounted) {
+                  loadedCount++;
+                  setProgress(Math.round((loadedCount / maxBatches) * 100));
+                  if (loadedCount >= 1) setLoading(false); 
+              }
+          }
+      };
 
         for (let i = 0; i < maxBatches; i += concurrencyLimit) {
             if (!isMounted || hitEnd) break;

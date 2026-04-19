@@ -98,13 +98,22 @@ export async function onRequest(context) {
             const chunk = batchesToFetch.slice(i, i + chunkSize);
             
             const chunkPromises = chunk.map(async (batch) => {
+                console.log(`[Backend] Fetching upstream Batch ${batch}...`); // NEW LOG
                 const fetchOptions = { headers: { ...COMMON_HEADERS, "Authorization": `Bearer ${cachedToken}` } };
                 
-                // FIX: Decoupled promises. If pricesRes gets a 429 rate limit, pfsRes is still processed.
                 const [pfsRes, pricesRes] = await Promise.all([
-                    fetch(`https://www.fuel-finder.service.gov.uk/api/v1/pfs?batch-number=${batch}`, fetchOptions).catch(() => null),
-                    fetch(`https://www.fuel-finder.service.gov.uk/api/v1/pfs/fuel-prices?batch-number=${batch}`, fetchOptions).catch(() => null)
+                    fetch(`https://www.fuel-finder.service.gov.uk/api/v1/pfs?batch-number=${batch}`, fetchOptions).catch(e => {
+                        console.error(`[Backend] ❌ Network error on Locations Batch ${batch}:`, e.message);
+                        return null;
+                    }),
+                    fetch(`https://www.fuel-finder.service.gov.uk/api/v1/pfs/fuel-prices?batch-number=${batch}`, fetchOptions).catch(e => {
+                        console.error(`[Backend] ❌ Network error on Prices Batch ${batch}:`, e.message);
+                        return null;
+                    })
                 ]);
+
+                // NEW LOGGING: Check exact status codes from the Gov API
+                console.log(`[Backend] Batch ${batch} Status -> Locations: ${pfsRes ? pfsRes.status : 'FAIL'}, Prices: ${pricesRes ? pricesRes.status : 'FAIL'}`);
 
                 if (!pfsRes || !pfsRes.ok) return null;
 
@@ -112,8 +121,15 @@ export async function onRequest(context) {
                 let pricesData = { data: [] };
                 
                 if (pricesRes && pricesRes.ok) {
-                    try { pricesData = await pricesRes.json(); } catch(e) {}
+                    try { pricesData = await pricesRes.json(); } catch(e) {
+                         console.error(`[Backend] ⚠️ JSON parse failed for prices Batch ${batch}`);
+                    }
                 }
+
+                const locCount = Array.isArray(pfsData) ? pfsData.length : (pfsData.data?.length || 0);
+                const priceCount = Array.isArray(pricesData) ? pricesData.length : (pricesData.data?.length || 0);
+                
+                console.log(`[Backend] Batch ${batch} Extracted -> ${locCount} Locations, ${priceCount} Prices`); // NEW LOG
 
                 return {
                     locs: Array.isArray(pfsData) ? pfsData : (pfsData.data || []),
