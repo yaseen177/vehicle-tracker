@@ -317,12 +317,19 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   };
 
   const visibleStations = useMemo(() => {
-    // FIX: Guard clause added to prevent execution before Google Maps is fully initialised
     if (!isLoaded || !window.google || !stations.length) return [];
     
     let routePolyline = null;
+    let startCoords = null; // NEW
+    let endCoords = null;   // NEW
+
     if (viewMode === 'route' && directionsResult) {
         routePolyline = new window.google.maps.Polyline({ path: directionsResult.routes[0].overview_path });
+        
+        // Extract exact coordinates for Point A and Point B
+        const leg = directionsResult.routes[0].legs[0];
+        startCoords = { lat: leg.start_location.lat(), lng: leg.start_location.lng() };
+        endCoords = { lat: leg.end_location.lat(), lng: leg.end_location.lng() };
     }
 
     const local = stations.filter(s => {
@@ -339,9 +346,24 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
          return mapBounds.contains(stationLoc);
       } else {
          if (!routePolyline) return false;
+
+         // --- THE INTELLIGENT DUMBBELL RADIUS ---
+         
+         // 1. Is it within 3 miles of the Origin?
+         const distFromStart = getDistance(startCoords.lat, startCoords.lng, s.location.latitude, s.location.longitude);
+         if (distFromStart <= 3.0) return true;
+
+         // 2. Is it within 3 miles of the Destination?
+         const distFromEnd = getDistance(endCoords.lat, endCoords.lng, s.location.latitude, s.location.longitude);
+         if (distFromEnd <= 3.0) return true;
+
+         // 3. Is it strictly along the route? (Tight ~1 mile tolerance)
+         // 0.015 degrees is roughly 1 mile. Change to 0.007 for ~0.5 miles.
          return window.google.maps.geometry.poly.isLocationOnEdge(stationLoc, routePolyline, 0.015);
       }
     });
+
+    // ... [Rest of your sorting logic remains exactly the same]
 
     if (local.length > 0) {
       const avgPrice = local.reduce((acc, s) => acc + s.prices[fuelType], 0) / local.length;
