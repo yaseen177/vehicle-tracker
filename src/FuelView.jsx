@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow, DirectionsRenderer, Autocomplete } from '@react-google-maps/api';
-import { Search, MapPin, Info, Sparkles, ChevronDown, ChevronUp, Route as RouteIcon, Navigation } from 'lucide-react'; 
+import { Search, MapPin, Info, Sparkles, ChevronDown, ChevronUp, Route as RouteIcon, Navigation, TrendingDown, TrendingUp } from 'lucide-react'; 
+import { db } from './firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 const containerStyle = { width: '100%', height: '45vh', minHeight: '300px' };
 
@@ -117,7 +119,7 @@ const mapStyles = [
   { featureType: "water", elementType: "geometry", stylers: [{ color: "#c9c9c9" }] }
 ];
 
-export default function FuelView({ googleMapsApiKey, logoKey }) {
+export default function FuelView({ googleMapsApiKey, logoKey, user }) {
   const mapRef = useRef(null);
   
   const [stations, setStations] = useState([]);
@@ -134,6 +136,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [mapCenter, setMapCenter] = useState({ lat: 51.5074, lng: -0.1278 }); 
   
   const [userCoords, setUserCoords] = useState(null);
+  const [profileCoords, setProfileCoords] = useState({ home: '', work: '' });
 
   const [viewMode, setViewMode] = useState('area'); 
   const [routeOrigin, setRouteOrigin] = useState("");
@@ -147,6 +150,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [filterBrand, setFilterBrand] = useState('All');
   const [searchName, setSearchName] = useState(''); 
   const [showSmartInfo, setShowSmartInfo] = useState(false); 
+  const [priceTrend, setPriceTrend] = useState(null); 
 
   const autocompleteAreaRef = useRef(null);
   const autocompleteOriginRef = useRef(null);
@@ -158,6 +162,20 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     googleMapsApiKey: googleMapsApiKey,
     libraries: libraries
   });
+
+  // Fetch Profile Locations for the One-Tap Commutes
+  useEffect(() => {
+    if (user) {
+      getDoc(doc(db, "users", user.uid)).then(snap => {
+        if (snap.exists()) {
+          setProfileCoords({
+            home: snap.data().homeLocation || '',
+            work: snap.data().workLocation || ''
+          });
+        }
+      }).catch(err => console.error("Failed to load profile commutes:", err));
+    }
+  }, [user]);
 
   useEffect(() => {
     let isMounted = true;
@@ -197,8 +215,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             }
         };
 
-        // THE FIX: hitEnd abort completely removed. It relentlessly loops 20 times.
         for (let i = 0; i < maxBatches; i += concurrencyLimit) {
+            // Relentlessly loop through all 20 batches without aborting early
             if (!isMounted) break;
             const promises = [];
             for (let j = 1; j <= concurrencyLimit; j++) {
@@ -275,18 +293,18 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     });
   };
 
-  const handleRouteSearch = () => {
-    if (!routeOrigin || !routeDestination || !window.google) return;
+  const executeRouteSearch = (originVal, destVal) => {
+    if (!originVal || !destVal || !window.google) return;
     
-    let finalOrigin = routeOrigin;
-    if (routeOrigin === "Your Location" && userCoords) {
+    let finalOrigin = originVal;
+    if (originVal === "Your Location" && userCoords) {
         finalOrigin = new window.google.maps.LatLng(userCoords.lat, userCoords.lng);
     } else if (!finalOrigin.toLowerCase().includes('uk') && !finalOrigin.toLowerCase().includes('united kingdom')) {
         finalOrigin += ", UK";
     }
 
-    let finalDest = routeDestination;
-    if (routeDestination === "Your Location" && userCoords) {
+    let finalDest = destVal;
+    if (destVal === "Your Location" && userCoords) {
         finalDest = new window.google.maps.LatLng(userCoords.lat, userCoords.lng);
     } else if (!finalDest.toLowerCase().includes('uk') && !finalDest.toLowerCase().includes('united kingdom')) {
         finalDest += ", UK";
@@ -312,6 +330,10 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         }
       }
     );
+  };
+
+  const handleRouteSearch = () => {
+      executeRouteSearch(routeOrigin, routeDestination);
   };
 
   const visibleStations = useMemo(() => {
@@ -395,6 +417,29 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     }
     return [];
   }, [isLoaded, stations, mapBounds, mapCenter, fuelType, filterBrand, searchName, sortBy, viewMode, directionsResult]); 
+
+  // --- Price Trend Forecasting Logic ---
+  useEffect(() => {
+    if (visibleStations.length > 5) {
+        const currentAvg = visibleStations.reduce((acc, s) => acc + s.prices[fuelType], 0) / visibleStations.length;
+        const storageKey = `fuel_trend_avg_${fuelType}`;
+        const lastAvgStr = localStorage.getItem(storageKey);
+        
+        if (lastAvgStr) {
+            const lastAvg = parseFloat(lastAvgStr);
+            const diff = currentAvg - lastAvg;
+            if (diff <= -0.5) {
+                setPriceTrend({ type: 'down', diff: Math.abs(diff).toFixed(1), text: `Prices have dropped by ${Math.abs(diff).toFixed(1)}p since your last visit. Great time to fill up!` });
+            } else if (diff >= 0.5) {
+                setPriceTrend({ type: 'up', diff: diff.toFixed(1), text: `Prices have risen by ${diff.toFixed(1)}p since your last visit.` });
+            } else {
+                setPriceTrend(null);
+            }
+        }
+        
+        localStorage.setItem(storageKey, currentAvg.toString());
+    }
+  }, [visibleStations, fuelType]);
 
   if (loading || !isLoaded) return (
       <div style={{display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', padding:'20px', textAlign:'center'}}>
@@ -520,6 +565,32 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                         Calculate <RouteIcon size={16} />
                     </button>
                 </div>
+                
+                {/* QUICK COMMUTE ACTIONS */}
+                {(profileCoords.home && profileCoords.work) && (
+                    <div style={{display: 'flex', gap: '8px', marginTop: '4px'}}>
+                        <button 
+                            onClick={() => {
+                                setRouteOrigin(profileCoords.home);
+                                setRouteDestination(profileCoords.work);
+                                executeRouteSearch(profileCoords.home, profileCoords.work);
+                            }}
+                            style={{flex: 1, padding: '8px', background: 'rgba(255,255,255,0.05)', color: '#bfdbfe', borderRadius: '8px', border: '1px dashed rgba(59, 130, 246, 0.4)', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontWeight: 'bold'}}
+                        >
+                            🏠 Home → Work
+                        </button>
+                        <button 
+                            onClick={() => {
+                                setRouteOrigin(profileCoords.work);
+                                setRouteDestination(profileCoords.home);
+                                executeRouteSearch(profileCoords.work, profileCoords.home);
+                            }}
+                            style={{flex: 1, padding: '8px', background: 'rgba(255,255,255,0.05)', color: '#bfdbfe', borderRadius: '8px', border: '1px dashed rgba(59, 130, 246, 0.4)', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontWeight: 'bold'}}
+                        >
+                            🏢 Work → Home
+                        </button>
+                    </div>
+                )}
             </div>
         )}
 
@@ -707,6 +778,15 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
 
       {/* --- LIST --- */}
       <div style={{flex:1, overflowY:'auto', paddingBottom:'20px', marginTop:'10px'}}>
+         
+         {/* PRICE TREND FORECASTING BANNER */}
+         {priceTrend && (
+             <div className="fade-in" style={{background: priceTrend.type === 'down' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: priceTrend.type === 'down' ? '#34d399' : '#f87171', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${priceTrend.type === 'down' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`, marginBottom: '12px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px'}}>
+                 {priceTrend.type === 'down' ? <TrendingDown size={18} /> : <TrendingUp size={18} />}
+                 {priceTrend.text}
+             </div>
+         )}
+
          <div style={{fontSize:'0.85rem', color:'#9ca3af', marginBottom:'8px', paddingLeft:'4px'}}>
             {viewMode === 'route' ? 'Stations along your route (' : 'Prices for visible area ('}
             {sortBy === 'price' && 'Sorted by cheapest)'}
@@ -792,8 +872,11 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                             </div>
 
                             <div style={{textAlign:'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end'}}>
-                                <div style={{fontSize:'1.1rem', fontWeight:'bold', color: station.color === 'green' ? '#4ade80' : 'white'}}>
+                                {/* DYNAMIC ARROWS ON INDIVIDUAL PRICES */}
+                                <div style={{display: 'flex', alignItems: 'center', fontSize:'1.1rem', fontWeight:'bold', color: station.color === 'green' ? '#4ade80' : 'white'}}>
                                     {fuelType === 'E10' ? station.prices.E10 : station.prices.B7}p
+                                    {priceTrend && priceTrend.type === 'down' && <TrendingDown size={16} style={{color:'#34d399', marginLeft:'4px'}} />}
+                                    {priceTrend && priceTrend.type === 'up' && <TrendingUp size={16} style={{color:'#f87171', marginLeft:'4px'}} />}
                                 </div>
                                 <div style={{fontSize:'0.75rem', color:'#666', marginBottom: '2px'}}>
                                     {fuelType === 'E10' ? 'Diesel' : 'Unleaded'}: {fuelType === 'E10' ? station.prices.B7 : station.prices.E10}p

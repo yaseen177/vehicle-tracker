@@ -11,6 +11,7 @@ import {
   LineChart, Line, BarChart, Bar, 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
+import { useJsApiLoader, Autocomplete } from '@react-google-maps/api';
 import "./App.css";
 import FuelView from './FuelView';
 
@@ -77,7 +78,6 @@ function ToastProvider({ children }) {
     </ToastContext.Provider>
   );
 }
-
 
 function App() {
   return <ToastProvider><MainApp /></ToastProvider>;
@@ -205,7 +205,7 @@ function MainApp() {
         if (window.confirm("Would you like to check the latest fuel prices?")) {
           handleNav('fuel');
         }
-      }, 500); // 500ms delay for a smoother user experience
+      }, 500); 
     }
   }, [user]);
 
@@ -309,6 +309,7 @@ function MainApp() {
             showToast={showToast} 
             onBack={() => handleNav("garage")}
             onSignOut={() => signOut(auth)}
+            googleMapsApiKey={import.meta.env.VITE_GOOGLE_MAPS_KEY}
           />
         )}
 
@@ -316,6 +317,7 @@ function MainApp() {
           <FuelView 
             googleMapsApiKey={import.meta.env.VITE_GOOGLE_MAPS_KEY} 
             logoKey={LOGO_DEV_PK}
+            user={user}
           />
         )}
 
@@ -472,7 +474,6 @@ const FleetTimeline = ({ vehicles }) => {
                   <div className="timeline-car-name">
                     {ev.car}
                   </div>
-                  {/* NEW: Registration Number */}
                   <div style={{fontSize:'0.75rem', color:'#9ca3af', marginBottom:'4px', fontWeight:'500'}}>
                     {ev.vehicle}
                   </div>
@@ -489,7 +490,6 @@ const FleetTimeline = ({ vehicles }) => {
   );
 };
 
-// Update arguments to accept onRefreshAll and isRefreshing
 function GarageView({ vehicles, onOpen, onAddClick, onRefreshAll, isRefreshing }) {
   return (
     <div className="fade-in">
@@ -534,7 +534,6 @@ function GarageView({ vehicles, onOpen, onAddClick, onRefreshAll, isRefreshing }
                 <div style={{marginTop:'24px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
                    <div style={{display:'flex', flexDirection:'column', gap:'6px'}}>
                       <Badge date={car.motExpiry} />
-                      {/* Ensure TaxBadge is defined in your file! */}
                       {typeof TaxBadge !== 'undefined' && <TaxBadge status={car.taxStatus} date={car.taxExpiry} />}
                    </div>
                    <div style={{color:'var(--primary)', fontSize:'0.9rem', fontWeight:'600'}}>Manage →</div>
@@ -1236,7 +1235,7 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
       } catch (err) { console.error("Could not merge PDF:", item.name, err); }
     }
 
-    return await mergedPdf.save(); // Returns Uint8Array
+    return await mergedPdf.save(); 
   };
 
   // --- 2. DOWNLOAD HANDLER ---
@@ -1263,7 +1262,6 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       
       // B. Upload to Firebase (Public Folder)
-      // Path: public_reports/{vehicleID}.pdf (Overwrites previous so it's always fresh)
       const shareRef = ref(storage, `public_reports/${vehicle.id}_Bundle.pdf`);
       await uploadBytes(shareRef, blob);
       const url = await getDownloadURL(shareRef);
@@ -1310,14 +1308,11 @@ function DashboardView({ user, vehicle, onDelete, showToast }) {
 
   const manufactureYear = vehicle.firstUsedDate ? new Date(vehicle.firstUsedDate).getFullYear() : (vehicle.manufactureDate ? new Date(vehicle.manufactureDate).getFullYear() : 'Unknown');
 
-  // Add this helper inside DashboardView
 const sendUpdateSms = async (msg) => {
-  // 1. Get User Profile to check for phone number
   const userDoc = await getDoc(doc(db, "users", user.uid));
   if (userDoc.exists()) {
     const userData = userDoc.data();
     if (userData.phoneNumber && userData.smsEnabled) {
-      // 2. Fire and forget (don't wait for it)
       fetch('/api/send-sms', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1355,18 +1350,16 @@ return (
     {/* --- MAIN SIDEBAR CARD --- */}
     <div className="bento-card sidebar-sticky">
        
-       {/* NEW: LOGO + PLATE HEADER */}
        <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center', 
           gap: '16px', marginBottom: '10px', flexWrap: 'wrap'
        }}>
-           {/* --- UPDATED: LARGER WHITE CIRCLE, SAME LOGO SIZE --- */}
            <div style={{
-             width: '90px', height: '90px', // Increased circle size
+             width: '90px', height: '90px', 
              background: 'white', borderRadius: '50%', 
              display: 'flex', alignItems: 'center', justifyContent: 'center',
              boxShadow: '0 4px 12px rgba(0,0,0,0.3)', 
-             padding: '20px' // Increased padding keeps the logo image small
+             padding: '20px' 
            }}>
               <img 
                 src={`https://img.logo.dev/${getBrandDomain(vehicle.make)}?token=${LOGO_DEV_PK}&size=128&format=png`} 
@@ -1376,7 +1369,6 @@ return (
               />
            </div>
 
-           {/* Registration Plate */}
            <div className="plate-wrapper" style={{margin:0}}>
               <div className="car-plate">{vehicle.registration}</div>
            </div>
@@ -1385,7 +1377,6 @@ return (
        <h2 style={{textAlign:'center', marginBottom:'4px'}}>{vehicle.make}</h2>
        <p style={{textAlign:'center', color:'#9ca3af', marginTop:0}}>{vehicle.model}</p>
        
-       {/* SPECS GRID (Unchanged) */}
        <div style={{marginTop:'20px', marginBottom:'20px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
            <div className="spec-box"><div className="spec-label">Year</div><div className="spec-val">{manufactureYear}</div></div>
            <div className="spec-box"><div className="spec-label">Engine</div><div className="spec-val">{vehicle.engineSize ? `${vehicle.engineSize}cc` : '-'}</div></div>
@@ -1393,7 +1384,6 @@ return (
            <div className="spec-box"><div className="spec-label">Colour</div><div className="spec-val">{vehicle.colour}</div></div>
        </div>
        
-       {/* DATES & EDITORS (Unchanged) */}
        <div style={{borderTop:'1px solid var(--border)', paddingTop:'10px', marginTop:'10px'}}>
     <div style={{marginBottom:'10px'}}>
        <div style={{fontSize:'0.75rem', color:'#9ca3af', marginBottom:'4px'}}>Vehicle Status</div>
@@ -1416,13 +1406,11 @@ return (
             logoKey={LOGO_DEV_PK}
             onDateChange={(val) => updateDate('insuranceExpiry', val)}
             onProviderChange={updateProvider}
-            // Make sure these two are added:
             onUpload={handleInsuranceUpload} 
             onDeleteDoc={deleteInsuranceDoc}
           />
        </div>
        
-       {/* ACTION BUTTONS (Unchanged) */}
        <div style={{marginTop:'30px', display:'flex', flexDirection:'column', gap:'10px'}}>
           <button onClick={refreshData} disabled={refreshing} className="btn btn-secondary btn-full">
              {refreshing ? "Refreshing..." : "🔄 Refresh Vehicle Data"}
@@ -1441,18 +1429,16 @@ return (
        </div>
     </div>
 
-    {/* --- RIGHT COLUMN (TABS & HISTORY) (Unchanged) --- */}
+    {/* --- RIGHT COLUMN (TABS & HISTORY) --- */}
     <div style={{ 
         display: 'flex', 
         flexDirection: 'column', 
-        gap: '30px', // Forces a hard 30px gap between Chart and Tabs
+        gap: '30px', 
         marginTop: '0px'
       }}> 
         
-        {/* 1. MILEAGE CHART CONTAINER */}
-        {/* We give this EXTRA height (400px) so the X-Axis labels have plenty of room inside */}
         <div style={{ 
-          height: '400px',    // <--- INCREASED HEIGHT to fit labels
+          height: '400px',   
           width: '100%', 
           position: 'relative',
           zIndex: 1
@@ -1460,7 +1446,6 @@ return (
            <MileageAnalysis motTests={vehicle.motTests} />
         </div> 
 
-        {/* 2. TABS SELECTION */}
         <div className="tabs" style={{
            display: 'flex',
            zIndex: 10,
@@ -1468,7 +1453,7 @@ return (
            padding: '8px',        
            borderRadius: '12px',  
            gap: '8px',
-           marginTop: '10px' // Extra safety margin
+           marginTop: '10px' 
         }}>
           <button 
             onClick={() => setTab("logs")} 
@@ -1493,7 +1478,6 @@ return (
           </button>
         </div>
 
-        {/* 3. TAB CONTENT - SERVICE LOGS */}
         {tab === 'logs' && (
           <div style={{ marginTop: '0px' }}> 
             <form onSubmit={e => handleUpload(e, 'log')} className="bento-card" style={{marginBottom:'24px'}}>
@@ -1532,14 +1516,12 @@ return (
           </div>
         )}
 
-        {/* 4. TAB CONTENT - MOT HISTORY */}
         {tab === 'mot' && (
           <div className="fade-in" style={{ marginTop: '0px' }}>
              {!vehicle.motTests || vehicle.motTests.length === 0 ? <EmptyState text="No MOT history found." /> : vehicle.motTests.map((test, index) => <MotTestCard key={index} test={test} />)}
           </div>
         )}
 
-        {/* 5. TAB CONTENT - DOCUMENTS */}
         {tab === 'docs' && (
           <div style={{ marginTop: '0px' }}>
             <form onSubmit={e => handleUpload(e, 'doc')} className="bento-card" style={{marginBottom:'24px'}}>
@@ -1578,17 +1560,14 @@ return (
 );
 }
 
-// --- UPDATED INSURANCE ROW (With Local UK Search) ---
 const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoKey, onUpload, onDeleteDoc }) => {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filteredResults, setFilteredResults] = useState([]);
   
-  // Ref for the hidden file input
   const fileInputRef = useRef(null);
 
-  // Filter Local UK List
   useEffect(() => {
     if (searchTerm.length < 1) {
       setFilteredResults([]);
@@ -1602,7 +1581,6 @@ const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoK
 
   const hasProvider = vehicle.insuranceProvider || vehicle.insuranceDomain;
 
-  // Handle file selection
   const handleFileChange = (e) => {
     if (e.target.files[0]) {
       onUpload(e.target.files[0]);
@@ -1620,7 +1598,6 @@ const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoK
               {vehicle.insuranceExpiry ? formatDate(vehicle.insuranceExpiry) : <span style={{color:'var(--primary)', fontSize:'0.9rem'}}>Set Date</span>}
               <input type="date" className="hidden-date-input" value={vehicle.insuranceExpiry || ""} onChange={(e) => onDateChange(e.target.value)} />
             </div>
-            {/* Always visible expand button */}
             <div className="row-action-area" onClick={() => setExpanded(!expanded)} style={{cursor:'pointer', minWidth:'40px', display:'flex', justifyContent:'center'}}>
               <span className="row-expand-icon">▼</span>
             </div>
@@ -1630,7 +1607,6 @@ const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoK
       {expanded && (
         <div className="insurance-details" style={{flexDirection:'column', alignItems:'stretch'}}>
            
-           {/* 1. PROVIDER SECTION (Your existing code) */}
            {!editing && hasProvider && (
              <div style={{display:'flex', alignItems:'center', gap:'16px', marginBottom:'20px'}}>
                 {vehicle.insuranceDomain ? (
@@ -1678,12 +1654,10 @@ const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoK
              </div>
            )}
 
-           {/* 2. NEW: POLICY DOCUMENT UPLOAD SECTION */}
            <div style={{borderTop:'1px solid var(--border)', paddingTop:'16px'}}>
               <label style={{fontSize:'0.85rem', color:'#9ca3af', marginBottom:'8px', display:'block'}}>Policy Document</label>
               
               {vehicle.insurancePolicyFile ? (
-                // STATE: File Exists
                 <div style={{display:'flex', alignItems:'center', gap:'10px', background:'rgba(255,255,255,0.05)', padding:'10px', borderRadius:'8px', border:'1px solid var(--border)'}}>
                    <div style={{fontSize:'1.5rem'}}>📄</div>
                    <div style={{flex:1, overflow:'hidden'}}>
@@ -1695,7 +1669,6 @@ const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoK
                    <button onClick={onDeleteDoc} style={{background:'none', border:'none', cursor:'pointer', fontSize:'1.2rem', color:'#ef4444'}}>×</button>
                 </div>
               ) : (
-                // STATE: No File (Upload Button)
                 <div 
                   onClick={() => fileInputRef.current.click()}
                   style={{
@@ -1725,7 +1698,6 @@ const ExpandableInsuranceRow = ({ vehicle, onDateChange, onProviderChange, logoK
   );
 };
 
-// --- UPDATED MOT CARD (Uses 'defects' array) ---
 const MotTestCard = ({ test }) => {
   const [isOpen, setIsOpen] = useState(false);
   
@@ -1734,9 +1706,7 @@ const MotTestCard = ({ test }) => {
   const mileage = test.odometerValue ? `${test.odometerValue} ${test.odometerUnit || 'mi'}` : "Unknown Mileage";
   const testNo = test.motTestNumber || "No Ref";
   
-  // LOOK FOR DEFECTS
   const defects = test.defects || [];
-  const hasDetails = defects.length > 0;
 
   return (
     <div className={`mot-card ${isOpen ? 'mot-expanded' : ''}`} style={{marginBottom: '16px'}}>
@@ -1800,7 +1770,6 @@ const MotTestCard = ({ test }) => {
   );
 };
 
-// --- HELPERS ---
 const EditableDateRow = ({ label, value, onChange }) => (
   <div className="editable-row">
     <div className="row-label"><StatusDot date={value} /> {label}</div>
@@ -1822,7 +1791,6 @@ const TaxBadge = ({ status, date }) => {
   const isTaxed = status?.toLowerCase() === 'taxed';
   const isSorn = status?.toLowerCase().includes('sorn');
   
-  // Format Date (e.g., "1 Nov 2025")
   const formattedDate = date ? new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 
   return (
@@ -1855,15 +1823,25 @@ const Badge = ({ date }) => {
   return <span style={{color: color, fontWeight: 700, fontSize:'0.9rem'}}>{d < 0 ? 'Expired' : `${d} days left`}</span>;
 };
 
-
-// Updated ProfileView
-function ProfileView({ user, showToast, onBack, onSignOut }) {
+// --- UPDATED PROFILE VIEW (Added Home & Work Locations) ---
+function ProfileView({ user, showToast, onBack, onSignOut, googleMapsApiKey }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [homeLocation, setHomeLocation] = useState("");
+  const [workLocation, setWorkLocation] = useState("");
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
+  
+  const homeRef = useRef(null);
+  const workRef = useRef(null);
+  
+  const [libraries] = useState(['places']);
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script-profile',
+    googleMapsApiKey: googleMapsApiKey,
+    libraries: libraries
+  });
 
-  // 1. Load existing profile
   useEffect(() => {
     const loadProfile = async () => {
       try {
@@ -1874,6 +1852,8 @@ function ProfileView({ user, showToast, onBack, onSignOut }) {
           const data = docSnap.data();
           setName(data.displayName || "");
           setPhone(data.phoneNumber || "");
+          setHomeLocation(data.homeLocation || "");
+          setWorkLocation(data.workLocation || "");
         }
       } catch (error) {
         console.error("Error loading profile:", error);
@@ -1884,15 +1864,13 @@ function ProfileView({ user, showToast, onBack, onSignOut }) {
     loadProfile();
   }, [user.uid]);
 
-  // 2. Save Profile
   const handleSave = async () => {
-    // Basic formatting
     let cleanPhone = phone.replace(/\s+/g, '');
     if (cleanPhone.startsWith('07')) {
       cleanPhone = '+44' + cleanPhone.substring(1);
     }
 
-    if (!cleanPhone.startsWith('+44') || cleanPhone.length < 11) {
+    if (cleanPhone.length > 0 && (!cleanPhone.startsWith('+44') || cleanPhone.length < 11)) {
       showToast("Please enter a valid UK mobile (+44...)", "error");
       return;
     }
@@ -1902,18 +1880,10 @@ function ProfileView({ user, showToast, onBack, onSignOut }) {
       await setDoc(doc(db, "users", user.uid), {
         displayName: name,
         phoneNumber: cleanPhone,
+        homeLocation,
+        workLocation,
         smsEnabled: true
       }, { merge: true });
-
-      // Optional: Send confirmation
-      await fetch('/api/send-sms', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-           to: cleanPhone,
-           body: `Hi ${name}, your My Garage profile has been updated.`
-        })
-      });
 
       showToast("Profile Updated Successfully!");
     } catch (e) {
@@ -1927,7 +1897,6 @@ function ProfileView({ user, showToast, onBack, onSignOut }) {
 
   return (
     <div className="fade-in" style={{maxWidth:'500px', margin:'20px auto', padding:'0 15px'}}>
-       {/* BACK BUTTON */}
        <button 
          onClick={onBack} 
          className="btn" 
@@ -1952,7 +1921,7 @@ function ProfileView({ user, showToast, onBack, onSignOut }) {
             style={{
               width:'100%', padding:'14px', background:'#0f1115', 
               border:'1px solid var(--border)', color:'white', 
-              borderRadius:'8px', marginBottom:'20px', fontSize:'1rem'
+              borderRadius:'8px', marginBottom:'20px', fontSize:'1rem', boxSizing: 'border-box'
             }}
           />
 
@@ -1966,9 +1935,69 @@ function ProfileView({ user, showToast, onBack, onSignOut }) {
             style={{
               width:'100%', padding:'14px', background:'#0f1115', 
               border:'1px solid var(--border)', color:'white', 
-              borderRadius:'8px', marginBottom:'24px', fontSize:'1rem'
+              borderRadius:'8px', marginBottom:'24px', fontSize:'1rem', boxSizing: 'border-box'
             }}
           />
+
+          {/* NEW SAVED LOCATIONS */}
+          <h3 style={{color:'white', marginTop: '10px', marginBottom: '8px'}}>Saved Locations</h3>
+          <p style={{marginBottom:'20px', color:'#9ca3af', fontSize: '0.85rem'}}>
+            These will appear as quick-action shortcuts in the Route Planner.
+          </p>
+
+          <label style={{display:'block', marginBottom:'8px', fontSize:'0.9rem', fontWeight:'bold', color:'var(--text-muted)'}}>
+            🏠 Home Address
+          </label>
+          {isLoaded ? (
+              <Autocomplete
+                  onLoad={ref => homeRef.current = ref}
+                  onPlaceChanged={() => {
+                      const place = homeRef.current.getPlace();
+                      if(place?.formatted_address) setHomeLocation(place.formatted_address);
+                  }}
+                  options={{ componentRestrictions: { country: "gb" } }}
+              >
+                  <input 
+                      value={homeLocation} 
+                      onChange={e => setHomeLocation(e.target.value)} 
+                      placeholder="e.g. 10 Downing Street, London" 
+                      style={{
+                          width:'100%', padding:'14px', background:'#0f1115', 
+                          border:'1px solid var(--border)', color:'white', 
+                          borderRadius:'8px', marginBottom:'20px', fontSize:'1rem', boxSizing: 'border-box'
+                      }}
+                  />
+              </Autocomplete>
+          ) : (
+             <div className="skeleton" style={{width: '100%', height: '50px', borderRadius: '8px', marginBottom: '20px'}}></div>
+          )}
+
+          <label style={{display:'block', marginBottom:'8px', fontSize:'0.9rem', fontWeight:'bold', color:'var(--text-muted)'}}>
+            🏢 Work Address
+          </label>
+          {isLoaded ? (
+              <Autocomplete
+                  onLoad={ref => workRef.current = ref}
+                  onPlaceChanged={() => {
+                      const place = workRef.current.getPlace();
+                      if(place?.formatted_address) setWorkLocation(place.formatted_address);
+                  }}
+                  options={{ componentRestrictions: { country: "gb" } }}
+              >
+                  <input 
+                      value={workLocation} 
+                      onChange={e => setWorkLocation(e.target.value)} 
+                      placeholder="e.g. Trafford Centre, Manchester" 
+                      style={{
+                          width:'100%', padding:'14px', background:'#0f1115', 
+                          border:'1px solid var(--border)', color:'white', 
+                          borderRadius:'8px', marginBottom:'24px', fontSize:'1rem', boxSizing: 'border-box'
+                      }}
+                  />
+              </Autocomplete>
+          ) : (
+             <div className="skeleton" style={{width: '100%', height: '50px', borderRadius: '8px', marginBottom: '24px'}}></div>
+          )}
 
           <button onClick={handleSave} disabled={loading} className="btn btn-primary btn-full" style={{padding:'14px', fontSize:'1.1rem'}}>
             {loading ? "Saving..." : "Save Changes"}
@@ -1976,7 +2005,6 @@ function ProfileView({ user, showToast, onBack, onSignOut }) {
 
           <hr style={{margin:'30px 0', borderColor:'var(--border)', opacity:0.3}} />
 
-          {/* SIGN OUT BUTTON */}
           <button 
             onClick={onSignOut} 
             className="btn btn-danger btn-full" 
@@ -1989,12 +2017,10 @@ function ProfileView({ user, showToast, onBack, onSignOut }) {
   );
 }
 
-// --- NEW MODERN LANDING PAGE (Fully Mobile Responsive) ---
 function LoginScreen({ onLogin }) {
   return (
     <div className="fade-in" style={{ minHeight: '100vh', backgroundColor: '#09090b', color: '#f8fafc', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui, sans-serif', overflowX: 'hidden', width: '100%' }}>
       
-      {/* Top Nav */}
       <nav style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 5%', borderBottom: '1px solid rgba(255,255,255,0.05)', width: '100%', boxSizing: 'border-box' }}>
         <div style={{ fontSize: 'clamp(1.2rem, 4vw, 1.5rem)', fontWeight: '800', letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           🚗 My Garage
@@ -2004,7 +2030,6 @@ function LoginScreen({ onLogin }) {
         </button>
       </nav>
 
-      {/* Hero Section */}
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', textAlign: 'center', width: '100%', boxSizing: 'border-box', margin: '0 auto', maxWidth: '1200px' }}>
         
         <div style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', padding: '6px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '24px', border: '1px solid rgba(59, 130, 246, 0.2)', maxWidth: '100%', wordWrap: 'break-word' }}>
@@ -2031,7 +2056,6 @@ function LoginScreen({ onLogin }) {
           Continue with Google
         </button>
 
-        {/* Feature Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: '20px', width: '100%', marginTop: 'clamp(40px, 8vw, 80px)' }}>
           <FeatureCard icon="🔔" title="Smart Reminders" desc="Automated SMS alerts before your MOT, Tax, or Insurance expires." />
           <FeatureCard icon="⛽" title="Live Fuel Prices" desc="Compare real-time Unleaded and Diesel prices at 8,000+ UK forecourts." />
@@ -2040,7 +2064,6 @@ function LoginScreen({ onLogin }) {
 
       </main>
 
-      {/* Footer */}
       <footer style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '30px 20px', textAlign: 'center', color: '#6b7280', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}>
         <p style={{ margin: 0 }}>© {new Date().getFullYear()} My Garage. All rights reserved.</p>
       </footer>
