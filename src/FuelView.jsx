@@ -243,7 +243,6 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
     return () => { isMounted = false; };
   }, []);
 
-  // --- INFINITE LOOP FIX: Precision Tolerance Check on Map Idle ---
   const onMapIdle = useCallback(() => {
     if (mapRef.current && viewMode === 'area') {
       const center = mapRef.current.getCenter();
@@ -269,6 +268,9 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
               setRouteOrigin("Your Location");
           } else {
               setPostcodeQuery("Your Location");
+              if (searchShape === 'rectangle') {
+                  setRectBounds(getRectBoundsFromCircle(loc, searchRadius));
+              }
               if (mapRef.current) {
                 mapRef.current.panTo(loc);
                 mapRef.current.setZoom(13);
@@ -289,6 +291,9 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
     if (postcodeQuery === "Your Location" && userCoords) {
         setSearchLocation(userCoords);
         mapRef.current.panTo(userCoords);
+        if (searchShape === 'rectangle') {
+            setRectBounds(getRectBoundsFromCircle(userCoords, searchRadius));
+        }
         return;
     }
 
@@ -300,7 +305,7 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
         mapRef.current.panTo(loc);
         
         if (searchShape === 'rectangle') {
-            generateRectBounds(loc);
+            setRectBounds(getRectBoundsFromCircle(loc, searchRadius));
         }
       } else {
         alert("Location not found!");
@@ -308,12 +313,41 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
     });
   };
 
+  const getRectBoundsFromCircle = (centerLoc, radiusMiles) => {
+      // 1 degree of Latitude is roughly 69 miles
+      const offsetLat = radiusMiles / 69.0; 
+      // Longitude offset requires Cosine of Latitude adjustment
+      const offsetLng = radiusMiles / (69.0 * Math.cos(centerLoc.lat * (Math.PI / 180)));
+      
+      return {
+          north: centerLoc.lat + offsetLat,
+          south: centerLoc.lat - offsetLat,
+          east: centerLoc.lng + offsetLng,
+          west: centerLoc.lng - offsetLng
+      };
+  };
+
+  const toggleShape = (shape) => {
+      if (shape === searchShape) return;
+      
+      if (shape === 'rectangle') {
+          // Perfectly frame the existing circle mathematically
+          setRectBounds(getRectBoundsFromCircle(searchLocation, searchRadius));
+      } 
+      
+      setSearchShape(shape);
+  };
+
   const handleRadiusDropdown = (e) => {
       const val = e.target.value;
       if (val === "custom") return;
       const newRadius = Number(val);
       setSearchRadius(newRadius);
-      setSearchShape('circle'); 
+      
+      // If we are in Rectangle mode, update the rectangle to match the dropdown too
+      if (searchShape === 'rectangle') {
+          setRectBounds(getRectBoundsFromCircle(searchLocation, newRadius));
+      }
       
       if (mapRef.current) {
           let zoom = 14;
@@ -326,7 +360,6 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
       }
   };
 
-  // --- INFINITE LOOP FIX: Precision Tolerance Check on Circle Drag ---
   const handleCircleDrag = () => {
       if (circleRef.current) {
           const newRadiusMeters = circleRef.current.getRadius();
@@ -339,18 +372,27 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
       }
   };
 
-  // --- INFINITE LOOP FIX: Precision Tolerance Check on Rectangle Drag ---
+  const handleCircleCenterDrag = () => {
+      if (circleRef.current) {
+          const center = circleRef.current.getCenter();
+          setSearchLocation(prev => {
+              if (prev && Math.abs(prev.lat - center.lat()) < 0.000001 && Math.abs(prev.lng - center.lng()) < 0.000001) return prev;
+              return { lat: center.lat(), lng: center.lng() };
+          });
+      }
+  };
+
   const handleRectDrag = () => {
       if (rectRef.current) {
           const b = rectRef.current.getBounds();
           if (!b) return;
           
-          setRectBounds(prev => {
-              const north = b.getNorthEast().lat();
-              const south = b.getSouthWest().lat();
-              const east = b.getNorthEast().lng();
-              const west = b.getSouthWest().lng();
+          const north = b.getNorthEast().lat();
+          const south = b.getSouthWest().lat();
+          const east = b.getNorthEast().lng();
+          const west = b.getSouthWest().lng();
 
+          setRectBounds(prev => {
               if (prev && 
                   Math.abs(prev.north - north) < 0.000001 &&
                   Math.abs(prev.south - south) < 0.000001 &&
@@ -358,26 +400,19 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
                   Math.abs(prev.west - west) < 0.000001) {
                   return prev; 
               }
+              
+              // Safely sync the underlying search coordinates & radius outside the React render cycle
+              setTimeout(() => {
+                  const centerLat = (north + south) / 2;
+                  const centerLng = (east + west) / 2;
+                  setSearchLocation({ lat: centerLat, lng: centerLng });
+                  
+                  const newRadius = getDistance(centerLat, centerLng, north, centerLng);
+                  setSearchRadius(newRadius);
+              }, 0);
+
               return { north, south, east, west };
           });
-      }
-  };
-
-  const generateRectBounds = (centerLoc) => {
-      const offsetLat = searchRadius * 0.014;
-      const offsetLng = searchRadius * 0.02; 
-      setRectBounds({
-          north: centerLoc.lat + offsetLat,
-          south: centerLoc.lat - offsetLat,
-          east: centerLoc.lng + offsetLng,
-          west: centerLoc.lng - offsetLng
-      });
-  };
-
-  const toggleShape = (shape) => {
-      setSearchShape(shape);
-      if (shape === 'rectangle' && !rectBounds) {
-          generateRectBounds(searchLocation);
       }
   };
 
@@ -856,6 +891,7 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
                 radius={searchRadius * 1609.34} 
                 editable={true} 
                 onRadiusChanged={handleCircleDrag}
+                onCenterChanged={handleCircleCenterDrag}
                 options={{
                   fillColor: '#3b82f6',
                   fillOpacity: 0.1,
