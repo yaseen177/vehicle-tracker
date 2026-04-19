@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
+import { Search, MapPin, Info, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'; // NEW: Imported icons
 
 const containerStyle = { width: '100%', height: '45vh', minHeight: '300px' };
 
@@ -38,9 +39,9 @@ const getReliability = (isoString) => {
     if (!isoString) return { text: "Unknown", color: "#6b7280", score: Infinity }; 
     const diffHours = (new Date() - new Date(isoString)) / (1000 * 60 * 60);
     
-    if (diffHours < 24) return { text: "High Reliability", color: "#4ade80", score: diffHours }; // Green (< 1 day)
-    if (diffHours < 72) return { text: "Medium Reliability", color: "#f59e0b", score: diffHours }; // Orange (< 3 days)
-    return { text: "Low Reliability", color: "#ef4444", score: diffHours }; // Red (> 3 days)
+    if (diffHours < 24) return { text: "High Reliability", color: "#4ade80", score: diffHours }; 
+    if (diffHours < 72) return { text: "Medium Reliability", color: "#f59e0b", score: diffHours }; 
+    return { text: "Low Reliability", color: "#ef4444", score: diffHours }; 
 };
 
 const getOpenStatus = (openingTimes) => {
@@ -135,11 +136,10 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [postcodeQuery, setPostcodeQuery] = useState("");
   const [fuelType, setFuelType] = useState('E10'); 
 
-  // --- STATES ---
   const [sortBy, setSortBy] = useState('price'); 
   const [filterBrand, setFilterBrand] = useState('All');
   const [searchName, setSearchName] = useState(''); 
-  const [showSmartInfo, setShowSmartInfo] = useState(false); // Controls the Info popup
+  const [showSmartInfo, setShowSmartInfo] = useState(false); 
 
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
@@ -243,7 +243,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     }
   };
 
-  // --- UPDATED VISIBLE STATIONS WITH ALGORITHMIC SMART SORT ---
   const visibleStations = useMemo(() => {
     if (!stations.length || !mapBounds) return [];
     
@@ -260,7 +259,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     if (local.length > 0) {
       const avgPrice = local.reduce((acc, s) => acc + s.prices[fuelType], 0) / local.length;
       
-      // 1. Calculate raw stats
       const rawProcessed = local.map(s => {
         const price = s.prices[fuelType];
         const dist = getDistance(mapCenter.lat, mapCenter.lng, s.location.latitude, s.location.longitude);
@@ -273,7 +271,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         return { ...s, color, distance: dist, reliability };
       });
 
-      // 2. Identify Min/Max constraints for Normalisation (Smart Sort logic)
       const prices = rawProcessed.map(s => s.prices[fuelType]);
       const dists = rawProcessed.map(s => s.distance);
       const rels = rawProcessed.map(s => s.reliability.score);
@@ -282,24 +279,20 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       const minDist = Math.min(...dists);   const maxDist = Math.max(...dists);
       const minRel = Math.min(...rels);     const maxRel = Math.max(...rels);
 
-      // 3. Normalise scores and apply weights
       const finalProcessed = rawProcessed.map(s => {
-         // Converts all metrics to a 0-100 scale where 100 is the best in the current view
          const normPrice = maxPrice === minPrice ? 100 : 100 - (((s.prices[fuelType] - minPrice) / (maxPrice - minPrice)) * 100);
          const normDist = maxDist === minDist ? 100 : 100 - (((s.distance - minDist) / (maxDist - minDist)) * 100);
          const normRel = maxRel === minRel ? 100 : 100 - (((s.reliability.score - minRel) / (maxRel - minRel)) * 100);
 
-         // Weights: 50% Price, 30% Distance, 20% Data Freshness
          const smartScore = (normPrice * 0.5) + (normDist * 0.3) + (normRel * 0.2);
          return { ...s, smartScore };
       });
 
-      // 4. Apply selected sort
       return finalProcessed.sort((a, b) => {
         if (sortBy === 'price') return a.prices[fuelType] - b.prices[fuelType];
         if (sortBy === 'distance') return a.distance - b.distance;
         if (sortBy === 'reliability') return a.reliability.score - b.reliability.score;
-        if (sortBy === 'smart') return b.smartScore - a.smartScore; // Sorts descending (highest score wins)
+        if (sortBy === 'smart') return b.smartScore - a.smartScore; 
         return 0;
       });
     }
@@ -331,13 +324,19 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             style={{flex:1, padding:'8px 12px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white'}}
           />
-          <button onClick={handleSearch} className="btn btn-primary" title="Search">🔍</button>
+          {/* LUCIDE SEARCH ICON */}
+          <button onClick={handleSearch} className="btn btn-primary" title="Search" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer'}}>
+              <Search size={18} />
+          </button>
+          {/* LUCIDE MAPPIN ICON */}
           <button 
             onClick={handleMyLocation} 
             className="btn btn-primary" 
             title="My Location"
-            style={{background: 'var(--background)', border: '1px solid var(--border)', color: 'white', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer'}}
-          >📍</button>
+            style={{background: 'var(--background)', border: '1px solid var(--border)', color: 'white', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+          >
+              <MapPin size={18} />
+          </button>
         </div>
 
         <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
@@ -368,24 +367,25 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
 
         <div style={{display:'flex', gap:'8px', flexWrap: 'wrap', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px'}}>
             
-            {/* SORTING WITH NEW INFO BUTTON */}
             <div style={{display: 'flex', flex: 1, gap: '4px'}}>
                 <select 
                     value={sortBy} 
                     onChange={(e) => setSortBy(e.target.value)}
                     style={{flex: 1, padding:'8px', borderRadius:'6px', border:'1px solid var(--border)', background:'#1f2937', color:'white', fontSize:'0.8rem', cursor:'pointer'}}
                 >
-                    <option value="smart">⭐ Sort by: Smart Sort</option>
+                    {/* TEXT UPDATED to remove emoji for clean styling inside a native <select> */}
+                    <option value="smart">Sort by: Smart Sort (Best Overall)</option>
                     <option value="price">Sort by: Price (Lowest)</option>
                     <option value="distance">Sort by: Distance (Nearest)</option>
                     <option value="reliability">Sort by: Reliability (Most Recent)</option>
                 </select>
+                {/* LUCIDE INFO ICON */}
                 <button 
                     onClick={() => setShowSmartInfo(!showSmartInfo)}
                     style={{background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '6px', width: '36px', cursor: 'pointer', color: '#9ca3af', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
                     title="What is Smart Sort?"
                 >
-                    ℹ️
+                    <Info size={18} />
                 </button>
             </div>
             
@@ -418,7 +418,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             />
         </div>
 
-        {/* SMART SORT EXPLANATION BOX */}
         {showSmartInfo && (
             <div className="fade-in" style={{background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '8px', padding: '12px', marginTop: '4px', fontSize: '0.85rem', color: '#bfdbfe', lineHeight: '1.5'}}>
                 <strong>What is Smart Sort?</strong><br/>
@@ -534,10 +533,10 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
              return (
                  <div key={i} style={{ display: 'flex', flexDirection: 'column' }}>
                     
-                    {/* TOP RECOMMENDED BADGE (Only shows on the #1 card when Smart Sort is active) */}
+                    {/* LUCIDE SPARKLES ICON FOR BADGE */}
                     {sortBy === 'smart' && i === 0 && (
-                        <div style={{background: 'linear-gradient(to right, #3b82f6, #8b5cf6)', color: 'white', padding: '4px 10px', borderRadius: '8px 8px 0 0', fontSize: '0.75rem', fontWeight: 'bold', display: 'inline-block', width: 'fit-content', marginLeft: '12px', marginBottom: '-8px', position: 'relative', zIndex: 1, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'}}>
-                            ⭐ Top Recommended 
+                        <div style={{background: 'linear-gradient(to right, #3b82f6, #8b5cf6)', color: 'white', padding: '4px 10px', borderRadius: '8px 8px 0 0', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', width: 'fit-content', marginLeft: '12px', marginBottom: '-8px', position: 'relative', zIndex: 1, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'}}>
+                            <Sparkles size={14} /> Top Recommended 
                         </div>
                     )}
 
@@ -549,7 +548,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                         flexDirection:'column',
                         borderLeft: `4px solid ${station.color === 'green' ? '#22c55e' : station.color === 'orange' ? '#f59e0b' : '#ef4444'}`,
                         background: selectedStation === station ? 'rgba(255,255,255,0.1)' : undefined,
-                        border: sortBy === 'smart' && i === 0 ? '1px solid #3b82f6' : undefined // Highlight border for winner
+                        border: sortBy === 'smart' && i === 0 ? '1px solid #3b82f6' : undefined 
                     }}
                     >
                         <div 
@@ -604,7 +603,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                                     {fuelType === 'E10' ? 'Diesel' : 'Unleaded'}: {fuelType === 'E10' ? station.prices.B7 : station.prices.E10}p
                                 </div>
                                 
-                                {/* SMART SCORE DISPLAY */}
                                 {sortBy === 'smart' && (
                                     <div style={{fontSize: '0.65rem', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', color: '#9ca3af', marginTop: '2px'}}>
                                         Score: {Math.round(station.smartScore)}/100
@@ -613,13 +611,13 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                             </div>
                         </div>
 
-                        {/* STATUS & DIRECTIONS ROW */}
                         <div style={{marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                             
                             <div style={{fontSize: '0.8rem', fontWeight: 'bold', color: openStatus ? openStatus.color : '#9ca3af'}}>
                                 {openStatus ? openStatus.text : ""}
                             </div>
 
+                            {/* LUCIDE CHEVRON ICONS */}
                             <button 
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -627,7 +625,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                                 }}
                                 style={{background: 'rgba(255,255,255,0.1)', border: 'none', color: '#9ca3af', padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'}}
                             >
-                                Directions {directionsOpenFor === station.site_id ? '▲' : '▼'}
+                                Directions {directionsOpenFor === station.site_id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                             </button>
                         </div>
 
