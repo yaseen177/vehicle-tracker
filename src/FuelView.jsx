@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { GoogleMap, useJsApiLoader, Marker, InfoWindow, DirectionsRenderer, Autocomplete } from '@react-google-maps/api';
+import { GoogleMap, useJsApiLoader, Marker, InfoWindow, DirectionsRenderer, Autocomplete, Circle } from '@react-google-maps/api';
 import { Search, MapPin, Info, Sparkles, ChevronDown, ChevronUp, Route as RouteIcon, Navigation, TrendingDown, TrendingUp } from 'lucide-react'; 
 import { db } from './firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -132,8 +132,10 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
   const [directionsOpenFor, setDirectionsOpenFor] = useState(null);
   const [appSyncTime, setAppSyncTime] = useState(null); 
   
-  const [mapBounds, setMapBounds] = useState(null);
+  // --- NEW SEPARATED STATE FOR CAMERA VS SEARCH ---
   const [mapCenter, setMapCenter] = useState({ lat: 51.5074, lng: -0.1278 }); 
+  const [searchLocation, setSearchLocation] = useState({ lat: 51.5074, lng: -0.1278 }); 
+  const [mapBounds, setMapBounds] = useState(null);
   
   const [userCoords, setUserCoords] = useState(null);
   const [profileCoords, setProfileCoords] = useState({ home: '', work: '' });
@@ -163,7 +165,6 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
     libraries: libraries
   });
 
-  // Fetch Profile Locations for the One-Tap Commutes
   useEffect(() => {
     if (user) {
       getDoc(doc(db, "users", user.uid)).then(snap => {
@@ -216,7 +217,6 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
         };
 
         for (let i = 0; i < maxBatches; i += concurrencyLimit) {
-            // Relentlessly loop through all 20 batches without aborting early
             if (!isMounted) break;
             const promises = [];
             for (let j = 1; j <= concurrencyLimit; j++) {
@@ -241,6 +241,8 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
     if (mapRef.current && viewMode === 'area') {
       const bounds = mapRef.current.getBounds();
       setMapBounds(bounds);
+      // We ONLY update mapCenter here to keep camera state synced, 
+      // but searchLocation remains anchored to where the user actively searched.
       const center = mapRef.current.getCenter();
       setMapCenter({ lat: center.lat(), lng: center.lng() });
     }
@@ -252,7 +254,7 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
         (p) => {
           const loc = { lat: p.coords.latitude, lng: p.coords.longitude };
           setUserCoords(loc);
-          setMapCenter(loc);
+          setSearchLocation(loc); // Lock the search anchor
           
           if (viewMode === 'route') {
               setRouteOrigin("Your Location");
@@ -276,6 +278,7 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
     if (!postcodeQuery || !window.google || !mapRef.current) return;
     
     if (postcodeQuery === "Your Location" && userCoords) {
+        setSearchLocation(userCoords); // Lock the search anchor
         mapRef.current.panTo(userCoords);
         mapRef.current.setZoom(14);
         return;
@@ -284,7 +287,11 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
     const geocoder = new window.google.maps.Geocoder();
     geocoder.geocode({ 'address': postcodeQuery + ", UK" }, (results, status) => {
       if (status === 'OK' && results[0]) {
-        const loc = results[0].geometry.location;
+        const loc = {
+            lat: results[0].geometry.location.lat(),
+            lng: results[0].geometry.location.lng()
+        };
+        setSearchLocation(loc); // Lock the search anchor
         mapRef.current.panTo(loc);
         mapRef.current.setZoom(14); 
       } else {
@@ -321,10 +328,12 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
       (result, status) => {
         if (status === window.google.maps.DirectionsStatus.OK) {
           setDirectionsResult(result);
-          setMapCenter({ 
+          const startLoc = { 
               lat: result.routes[0].legs[0].start_location.lat(), 
               lng: result.routes[0].legs[0].start_location.lng() 
-          });
+          };
+          setSearchLocation(startLoc);
+          setMapCenter(startLoc);
         } else {
           alert(`Could not calculate route: ${status}`);
         }
@@ -380,7 +389,8 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
       
       const rawProcessed = local.map(s => {
         const price = s.prices[fuelType];
-        const dist = getDistance(mapCenter.lat, mapCenter.lng, s.location.latitude, s.location.longitude);
+        // Distances are now bound to the static SEARCH location, not the moving map center
+        const dist = getDistance(searchLocation.lat, searchLocation.lng, s.location.latitude, s.location.longitude);
         const reliability = getReliability(s.last_updated);
         
         let color = "red";
@@ -416,9 +426,8 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
       });
     }
     return [];
-  }, [isLoaded, stations, mapBounds, mapCenter, fuelType, filterBrand, searchName, sortBy, viewMode, directionsResult]); 
+  }, [isLoaded, stations, mapBounds, searchLocation, fuelType, filterBrand, searchName, sortBy, viewMode, directionsResult]); 
 
-  // --- Price Trend Forecasting Logic ---
   useEffect(() => {
     if (visibleStations.length > 5) {
         const currentAvg = visibleStations.reduce((acc, s) => acc + s.prices[fuelType], 0) / visibleStations.length;
@@ -458,7 +467,6 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
       {/* --- CONTROLS --- */}
       <div className="bento-card" style={{margin:'0 0 10px 0', padding:'12px', display:'flex', flexDirection:'column', gap:'12px'}}>
         
-        {/* MODE TOGGLE */}
         <div style={{display: 'flex', gap: '8px', marginBottom: '4px'}}>
             <button 
                 onClick={() => setViewMode('area')} 
@@ -474,7 +482,6 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
             </button>
         </div>
 
-        {/* INPUT FIELDS WITH AUTOCOMPLETE */}
         {viewMode === 'area' ? (
             <div style={{display:'flex', gap:'8px'}}>
                 <div style={{flex: 1}}>
@@ -485,7 +492,9 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
                             if(place?.formatted_address) {
                                 setPostcodeQuery(place.formatted_address);
                                 if(place.geometry?.location && mapRef.current) {
-                                    mapRef.current.panTo(place.geometry.location);
+                                    const loc = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
+                                    setSearchLocation(loc);
+                                    mapRef.current.panTo(loc);
                                     mapRef.current.setZoom(14);
                                 }
                             }
@@ -566,7 +575,6 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
                     </button>
                 </div>
                 
-                {/* QUICK COMMUTE ACTIONS */}
                 {(profileCoords.home && profileCoords.work) && (
                     <div style={{display: 'flex', gap: '8px', marginTop: '4px'}}>
                         <button 
@@ -594,7 +602,6 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
             </div>
         )}
 
-        {/* FILTERS & FUEL TOGGLES */}
         <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
            <div style={{display:'flex', background:'rgba(255,255,255,0.1)', borderRadius:'8px', padding:'2px'}}>
               <button 
@@ -710,10 +717,26 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
             styles: mapStyles,
             disableDefaultUI: true,
             clickableIcons: false,
-            gestureHandling: "cooperative"
+            gestureHandling: "greedy" // TRAPS GESTURES TO PREVENT ACCIDENTAL PAGE ZOOMING ON MOBILE
           }}
         >
-          <Marker position={mapCenter} icon="https://maps.google.com/mapfiles/ms/icons/blue-dot.png" />
+          {/* SEARCH AREA CIRCLE */}
+          {viewMode === 'area' && (
+              <Circle
+                center={searchLocation}
+                radius={8046} // Roughly 5 miles
+                options={{
+                  fillColor: '#3b82f6',
+                  fillOpacity: 0.1,
+                  strokeColor: '#3b82f6',
+                  strokeOpacity: 0.3,
+                  strokeWeight: 2,
+                  clickable: false
+                }}
+              />
+          )}
+
+          <Marker position={searchLocation} icon="https://maps.google.com/mapfiles/ms/icons/blue-dot.png" zIndex={999} />
           
           {viewMode === 'route' && directionsResult && (
              <DirectionsRenderer
@@ -779,7 +802,6 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
       {/* --- LIST --- */}
       <div style={{flex:1, overflowY:'auto', paddingBottom:'20px', marginTop:'10px'}}>
          
-         {/* PRICE TREND FORECASTING BANNER */}
          {priceTrend && (
              <div className="fade-in" style={{background: priceTrend.type === 'down' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: priceTrend.type === 'down' ? '#34d399' : '#f87171', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${priceTrend.type === 'down' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`, marginBottom: '12px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px'}}>
                  {priceTrend.type === 'down' ? <TrendingDown size={18} /> : <TrendingUp size={18} />}
@@ -872,7 +894,6 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
                             </div>
 
                             <div style={{textAlign:'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end'}}>
-                                {/* DYNAMIC ARROWS ON INDIVIDUAL PRICES */}
                                 <div style={{display: 'flex', alignItems: 'center', fontSize:'1.1rem', fontWeight:'bold', color: station.color === 'green' ? '#4ade80' : 'white'}}>
                                     {fuelType === 'E10' ? station.prices.E10 : station.prices.B7}p
                                     {priceTrend && priceTrend.type === 'down' && <TrendingDown size={16} style={{color:'#34d399', marginLeft:'4px'}} />}
