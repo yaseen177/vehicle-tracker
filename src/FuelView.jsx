@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
-import { Search, MapPin, Info, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'; 
+import { GoogleMap, useJsApiLoader, Marker, InfoWindow, DirectionsRenderer } from '@react-google-maps/api';
+import { Search, MapPin, Info, Sparkles, ChevronDown, ChevronUp, Route as RouteIcon, Navigation } from 'lucide-react'; 
 
 const containerStyle = { width: '100%', height: '45vh', minHeight: '300px' };
 
@@ -133,6 +133,12 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [mapBounds, setMapBounds] = useState(null);
   const [mapCenter, setMapCenter] = useState({ lat: 51.5074, lng: -0.1278 }); 
 
+  // --- NEW: View Mode & Routing States ---
+  const [viewMode, setViewMode] = useState('area'); // 'area' | 'route'
+  const [routeOrigin, setRouteOrigin] = useState("");
+  const [routeDestination, setRouteDestination] = useState("");
+  const [directionsResult, setDirectionsResult] = useState(null);
+
   const [postcodeQuery, setPostcodeQuery] = useState("");
   const [fuelType, setFuelType] = useState('E10'); 
 
@@ -141,28 +147,30 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [searchName, setSearchName] = useState(''); 
   const [showSmartInfo, setShowSmartInfo] = useState(false); 
 
+  // IMPORTANT: Added 'geometry' library to enable the route filtering math
+  const [libraries] = useState(['places', 'geometry']);
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: googleMapsApiKey
+    googleMapsApiKey: googleMapsApiKey,
+    libraries: libraries
   });
 
   useEffect(() => {
     let isMounted = true;
     
     async function fetchBatches() {
-        // The API currently maxes out around batch 18-20
         const maxBatches = 20;
         const concurrencyLimit = 3; 
         let loadedCount = 0;
+        let hitEnd = false;
         
         const fetchBatch = async (batch) => {
-            console.log(`[Frontend] 📡 Requesting Batch ${batch}...`);
             try {
                 const res = await fetch(`/api/fuel-prices?batch=${batch}&t=${new Date().getTime()}`); 
                 if (!res.ok) return; 
                 const data = await res.json();
                 
-                console.log(`[Frontend] ✅ Batch ${batch} returned ${data.stations?.length || 0} stations.`);
+                if (data.hitEnd) hitEnd = true;
 
                 if (data.stations && data.stations.length > 0 && isMounted) {
                     setStations(prev => {
@@ -189,15 +197,12 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         };
 
         for (let i = 0; i < maxBatches; i += concurrencyLimit) {
-            // FIX: Removed the hitEnd abort trigger completely.
-            if (!isMounted) break;
+            if (!isMounted || hitEnd) break;
             const promises = [];
             for (let j = 1; j <= concurrencyLimit; j++) {
                 if (i + j <= maxBatches) promises.push(fetchBatch(i + j));
             }
             await Promise.all(promises);
-            
-            // FIX: Add a 300ms breather between chunks to prevent the API from dropping batches
             await new Promise(resolve => setTimeout(resolve, 300));
         }
         
@@ -221,15 +226,15 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   }, []);
 
   const onMapIdle = useCallback(() => {
-    if (mapRef.current) {
+    if (mapRef.current && viewMode === 'area') {
       const bounds = mapRef.current.getBounds();
       setMapBounds(bounds);
       const center = mapRef.current.getCenter();
       setMapCenter({ lat: center.lat(), lng: center.lng() });
     }
-  }, []);
+  }, [viewMode]);
 
-  const handleSearch = () => {
+  const handleAreaSearch = () => {
     if (!postcodeQuery || !window.google || !mapRef.current) return;
     const geocoder = new window.google.maps.Geocoder();
     geocoder.geocode({ 'address': postcodeQuery + ", UK" }, (results, status) => {
@@ -238,9 +243,36 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         mapRef.current.panTo(loc);
         mapRef.current.setZoom(14); 
       } else {
-        alert("Postcode not found!");
+        alert("Location not found!");
       }
     });
+  };
+
+  // --- NEW: Calculate Route Logic ---
+  const handleRouteSearch = () => {
+    if (!routeOrigin || !routeDestination || !window.google) return;
+    
+    const directionsService = new window.google.maps.DirectionsService();
+    
+    directionsService.route(
+      {
+        origin: routeOrigin + ", UK",
+        destination: routeDestination + ", UK",
+        travelMode: window.google.maps.TravelMode.DRIVING,
+      },
+      (result, status) => {
+        if (status === window.google.maps.DirectionsStatus.OK) {
+          setDirectionsResult(result);
+          // Set map center to origin so distances in the list are relative to the start point
+          setMapCenter({ 
+              lat: result.routes[0].legs[0].start_location.lat(), 
+              lng: result.routes[0].legs[0].start_location.lng() 
+          });
+        } else {
+          alert(`Could not calculate route: ${status}`);
+        }
+      }
+    );
   };
 
   const handleMyLocation = () => {
@@ -249,9 +281,13 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         (p) => {
           const loc = { lat: p.coords.latitude, lng: p.coords.longitude };
           setMapCenter(loc);
-          if (mapRef.current) {
-            mapRef.current.panTo(loc);
-            mapRef.current.setZoom(14);
+          if (viewMode === 'route') {
+              setRouteOrigin(`${p.coords.latitude}, ${p.coords.longitude}`);
+          } else {
+              if (mapRef.current) {
+                mapRef.current.panTo(loc);
+                mapRef.current.setZoom(14);
+              }
           }
         },
         () => alert("Unable to retrieve your location.")
@@ -262,16 +298,32 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   };
 
   const visibleStations = useMemo(() => {
-    if (!stations.length || !mapBounds) return [];
+    if (!stations.length) return [];
     
+    // Create Polyline geometry strictly once for route filtering
+    let routePolyline = null;
+    if (viewMode === 'route' && directionsResult) {
+        routePolyline = new window.google.maps.Polyline({ path: directionsResult.routes[0].overview_path });
+    }
+
     const local = stations.filter(s => {
       if (!s.prices || !s.prices[fuelType]) return false; 
       if (filterBrand !== 'All' && s.brand !== filterBrand) return false; 
       if (searchName.trim() !== '') {
           if (!s.brand.toLowerCase().includes(searchName.toLowerCase())) return false;
       }
+      
       const stationLoc = new window.google.maps.LatLng(s.location.latitude, s.location.longitude);
-      return mapBounds.contains(stationLoc);
+      
+      // Determine visibility based on selected mode
+      if (viewMode === 'area') {
+         if (!mapBounds) return false;
+         return mapBounds.contains(stationLoc);
+      } else {
+         if (!routePolyline) return false;
+         // Tolerance 0.015 degrees is roughly a 1-mile corridor along the route
+         return window.google.maps.geometry.poly.isLocationOnEdge(stationLoc, routePolyline, 0.015);
+      }
     });
 
     if (local.length > 0) {
@@ -315,7 +367,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       });
     }
     return [];
-  }, [stations, mapBounds, mapCenter, fuelType, filterBrand, searchName, sortBy]);
+  }, [stations, mapBounds, mapCenter, fuelType, filterBrand, searchName, sortBy, viewMode, directionsResult]);
 
   if (loading || !isLoaded) return (
       <div style={{display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', padding:'20px', textAlign:'center'}}>
@@ -334,27 +386,78 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       {/* --- CONTROLS --- */}
       <div className="bento-card" style={{margin:'0 0 10px 0', padding:'12px', display:'flex', flexDirection:'column', gap:'12px'}}>
         
-        <div style={{display:'flex', gap:'8px'}}>
-          <input 
-            placeholder="Search map location (e.g. London)" 
-            value={postcodeQuery}
-            onChange={(e) => setPostcodeQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            style={{flex:1, padding:'8px 12px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white'}}
-          />
-          <button onClick={handleSearch} className="btn btn-primary" title="Search" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer'}}>
-              <Search size={18} />
-          </button>
-          <button 
-            onClick={handleMyLocation} 
-            className="btn btn-primary" 
-            title="My Location"
-            style={{background: 'var(--background)', border: '1px solid var(--border)', color: 'white', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
-          >
-              <MapPin size={18} />
-          </button>
+        {/* MODE TOGGLE */}
+        <div style={{display: 'flex', gap: '8px', marginBottom: '4px'}}>
+            <button 
+                onClick={() => setViewMode('area')} 
+                style={{flex: 1, padding: '8px', background: viewMode === 'area' ? '#3b82f6' : 'rgba(255,255,255,0.05)', color: 'white', borderRadius: '8px', border: viewMode === 'area' ? '1px solid #3b82f6' : '1px solid var(--border)', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer', transition: 'all 0.2s'}}
+            >
+                <MapPin size={16} /> Area Search
+            </button>
+            <button 
+                onClick={() => setViewMode('route')} 
+                style={{flex: 1, padding: '8px', background: viewMode === 'route' ? '#8b5cf6' : 'rgba(255,255,255,0.05)', color: 'white', borderRadius: '8px', border: viewMode === 'route' ? '1px solid #8b5cf6' : '1px solid var(--border)', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer', transition: 'all 0.2s'}}
+            >
+                <RouteIcon size={16} /> Route Search
+            </button>
         </div>
 
+        {/* CONDITIONAL SEARCH INPUTS */}
+        {viewMode === 'area' ? (
+            <div style={{display:'flex', gap:'8px'}}>
+                <input 
+                    placeholder="Search map location (e.g. London)" 
+                    value={postcodeQuery}
+                    onChange={(e) => setPostcodeQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAreaSearch()}
+                    style={{flex:1, padding:'8px 12px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white'}}
+                />
+                <button onClick={handleAreaSearch} className="btn btn-primary" title="Search" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer'}}>
+                    <Search size={18} />
+                </button>
+                <button 
+                    onClick={handleMyLocation} 
+                    className="btn btn-primary" 
+                    title="My Location"
+                    style={{background: 'var(--background)', border: '1px solid var(--border)', color: 'white', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+                >
+                    <Navigation size={18} />
+                </button>
+            </div>
+        ) : (
+            <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
+                <div style={{display: 'flex', gap: '8px'}}>
+                    <input 
+                        placeholder="Origin (e.g. Manchester)" 
+                        value={routeOrigin}
+                        onChange={(e) => setRouteOrigin(e.target.value)}
+                        style={{flex:1, padding:'8px 12px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white'}}
+                    />
+                    <button 
+                        onClick={handleMyLocation} 
+                        className="btn btn-primary" 
+                        title="Use My GPS Location"
+                        style={{background: 'var(--background)', border: '1px solid var(--border)', color: 'white', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+                    >
+                        <Navigation size={18} />
+                    </button>
+                </div>
+                <div style={{display: 'flex', gap: '8px'}}>
+                    <input 
+                        placeholder="Destination (e.g. London)" 
+                        value={routeDestination}
+                        onChange={(e) => setRouteDestination(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleRouteSearch()}
+                        style={{flex:1, padding:'8px 12px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white'}}
+                    />
+                    <button onClick={handleRouteSearch} style={{background: '#8b5cf6', color: 'white', padding: '8px 16px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'}}>
+                        Calculate <RouteIcon size={16} />
+                    </button>
+                </div>
+            </div>
+        )}
+
+        {/* FILTERS & FUEL TOGGLES */}
         <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
            <div style={{display:'flex', background:'rgba(255,255,255,0.1)', borderRadius:'8px', padding:'2px'}}>
               <button 
@@ -376,7 +479,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
            </div>
            
            <div style={{fontSize:'0.75rem', color:'#9ca3af', fontStyle:'italic', display: 'flex', flexDirection: 'column', alignItems: 'flex-end'}}>
-             <span>{visibleStations.length} stations in view</span>
+             <span>{visibleStations.length} stations {viewMode === 'route' ? 'along route' : 'in view'}</span>
              {appSyncTime && <span style={{fontSize: '0.7rem', opacity: 0.8}}>App Synced: {appSyncTime}</span>}
            </div>
         </div>
@@ -475,6 +578,17 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         >
           <Marker position={mapCenter} icon="https://maps.google.com/mapfiles/ms/icons/blue-dot.png" />
           
+          {/* RENDER THE CALCULATED ROUTE IF IN ROUTE MODE */}
+          {viewMode === 'route' && directionsResult && (
+             <DirectionsRenderer
+                directions={directionsResult}
+                options={{
+                    suppressMarkers: false,
+                    polylineOptions: { strokeColor: '#8b5cf6', strokeWeight: 5, strokeOpacity: 0.8 }
+                }}
+             />
+          )}
+
           {visibleStations.map((station, i) => (
             <Marker
               key={i}
@@ -529,15 +643,18 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       {/* --- LIST --- */}
       <div style={{flex:1, overflowY:'auto', paddingBottom:'20px', marginTop:'10px'}}>
          <div style={{fontSize:'0.85rem', color:'#9ca3af', marginBottom:'8px', paddingLeft:'4px'}}>
-            {sortBy === 'price' && 'Prices for visible area (Sorted by cheapest)'}
-            {sortBy === 'distance' && 'Prices for visible area (Sorted by nearest)'}
-            {sortBy === 'reliability' && 'Prices for visible area (Sorted by highest reliability)'}
-            {sortBy === 'smart' && 'Prices for visible area (Recommended Best Compromise)'}
+            {viewMode === 'route' ? 'Stations along your route (' : 'Prices for visible area ('}
+            {sortBy === 'price' && 'Sorted by cheapest)'}
+            {sortBy === 'distance' && 'Sorted by nearest)'}
+            {sortBy === 'reliability' && 'Sorted by highest reliability)'}
+            {sortBy === 'smart' && 'Recommended Best Compromise)'}
          </div>
 
          {visibleStations.length === 0 && (
              <div style={{padding: '20px', textAlign: 'center', color: '#9ca3af', fontSize: '0.9rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px dashed rgba(255,255,255,0.1)'}}>
-                 No stations found matching your filters. Try moving the map or adjusting your search.
+                 {viewMode === 'route' && !directionsResult 
+                    ? "Enter an Origin and Destination to find stations along your journey."
+                    : "No stations found matching your filters."}
              </div>
          )}
 
