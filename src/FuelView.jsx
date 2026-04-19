@@ -273,7 +273,7 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
               }
               if (mapRef.current) {
                 mapRef.current.panTo(loc);
-                mapRef.current.setZoom(13);
+                mapRef.current.setZoom(13); 
               }
           }
         },
@@ -314,39 +314,41 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
   };
 
   const getRectBoundsFromCircle = (centerLoc, radiusMiles) => {
-    // 1 degree of Latitude is roughly 69 miles
-    const offsetLat = radiusMiles / 69.0; 
-    // Longitude offset requires Cosine of Latitude adjustment
-    const offsetLng = radiusMiles / (69.0 * Math.cos(centerLoc.lat * (Math.PI / 180)));
-    
-    return {
-        north: centerLoc.lat + offsetLat,
-        south: centerLoc.lat - offsetLat,
-        east: centerLoc.lng + offsetLng,
-        west: centerLoc.lng - offsetLng
-    };
-};
+      const offsetLat = radiusMiles / 69.0; 
+      const offsetLng = radiusMiles / (69.0 * Math.cos(centerLoc.lat * (Math.PI / 180)));
+      
+      return {
+          north: centerLoc.lat + offsetLat,
+          south: centerLoc.lat - offsetLat,
+          east: centerLoc.lng + offsetLng,
+          west: centerLoc.lng - offsetLng
+      };
+  };
 
-const toggleShape = (shape) => {
-    if (shape === searchShape) return;
-    
-    if (shape === 'rectangle') {
-        // 1. Circle -> Rectangle: Perfectly frame the existing circle mathematically
-        setRectBounds(getRectBoundsFromCircle(searchLocation, searchRadius));
-    } else if (shape === 'circle' && rectBounds) {
-        // 2. Rectangle -> Circle: Find the exact midpoint of the rectangle bounds
-        const centerLat = (rectBounds.north + rectBounds.south) / 2;
-        const centerLng = (rectBounds.east + rectBounds.west) / 2;
-        
-        setSearchLocation({ lat: centerLat, lng: centerLng });
-        
-        // Calculate the new radius (distance from the new center to the North edge)
-        const newRadius = getDistance(centerLat, centerLng, rectBounds.north, centerLng);
-        setSearchRadius(newRadius);
-    }
-    
-    setSearchShape(shape);
-};
+  // --- UPDATED: Shape Toggle Logic ---
+  const toggleShape = (shape) => {
+      if (shape === searchShape) return;
+      
+      if (shape === 'rectangle') {
+          // Circle -> Rectangle: Create a square bounding box using the current radius
+          setRectBounds(getRectBoundsFromCircle(searchLocation, searchRadius));
+      } else if (shape === 'circle' && rectBounds) {
+          // Rectangle -> Circle: Find exact midpoint of the drawn rectangle
+          const centerLat = (rectBounds.north + rectBounds.south) / 2;
+          const centerLng = (rectBounds.east + rectBounds.west) / 2;
+          
+          setSearchLocation({ lat: centerLat, lng: centerLng });
+          
+          // Calculate the distance to the North edge AND the East edge
+          const distNS = getDistance(centerLat, centerLng, rectBounds.north, centerLng);
+          const distEW = getDistance(centerLat, centerLng, centerLat, rectBounds.east);
+          
+          // Strictly use the shortest side as the new radius
+          setSearchRadius(Math.min(distNS, distEW));
+      }
+      
+      setSearchShape(shape);
+  };
 
   const handleRadiusDropdown = (e) => {
       const val = e.target.value;
@@ -354,7 +356,6 @@ const toggleShape = (shape) => {
       const newRadius = Number(val);
       setSearchRadius(newRadius);
       
-      // If we are in Rectangle mode, update the rectangle to match the dropdown too
       if (searchShape === 'rectangle') {
           setRectBounds(getRectBoundsFromCircle(searchLocation, newRadius));
       }
@@ -392,6 +393,7 @@ const toggleShape = (shape) => {
       }
   };
 
+  // --- UPDATED: Rectangle Drag Handler ---
   const handleRectDrag = () => {
       if (rectRef.current) {
           const b = rectRef.current.getBounds();
@@ -411,14 +413,15 @@ const toggleShape = (shape) => {
                   return prev; 
               }
               
-              // Safely sync the underlying search coordinates & radius outside the React render cycle
+              // Safely sync the underlying search coordinates & short-side radius
               setTimeout(() => {
                   const centerLat = (north + south) / 2;
                   const centerLng = (east + west) / 2;
                   setSearchLocation({ lat: centerLat, lng: centerLng });
                   
-                  const newRadius = getDistance(centerLat, centerLng, north, centerLng);
-                  setSearchRadius(newRadius);
+                  const distNS = getDistance(centerLat, centerLng, north, centerLng);
+                  const distEW = getDistance(centerLat, centerLng, centerLat, east);
+                  setSearchRadius(Math.min(distNS, distEW));
               }, 0);
 
               return { north, south, east, west };
@@ -860,7 +863,7 @@ const toggleShape = (shape) => {
       {/* --- MAP --- */}
       <div style={{height:'45vh', minHeight:'250px', borderRadius:'12px', overflow:'hidden', border:'1px solid var(--border)', position: 'relative', flexShrink:0}}>
         
-        {/* SHAPE SELECTOR OVERLAY (LUCIDE ICONS ONLY) */}
+        {/* SHAPE SELECTOR OVERLAY */}
         {viewMode === 'area' && (
             <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 10, display: 'flex', background: 'rgba(15, 23, 42, 0.9)', borderRadius: '8px', padding: '4px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}>
                 <button 
@@ -893,13 +896,13 @@ const toggleShape = (shape) => {
             gestureHandling: "greedy" 
           }}
         >
-          {/* SEARCH AREA SHAPES WITH DRAG HANDLES */}
           {viewMode === 'area' && searchShape === 'circle' && (
               <Circle
                 onLoad={(circle) => circleRef.current = circle}
                 center={searchLocation}
                 radius={searchRadius * 1609.34} 
                 editable={true} 
+                draggable={true} // Allows dragging the entire shape
                 onRadiusChanged={handleCircleDrag}
                 onCenterChanged={handleCircleCenterDrag}
                 options={{
@@ -917,6 +920,7 @@ const toggleShape = (shape) => {
                 onLoad={(rect) => rectRef.current = rect}
                 bounds={rectBounds}
                 editable={true}
+                draggable={true} // Allows dragging the entire shape
                 onBoundsChanged={handleRectDrag}
                 options={{
                   fillColor: '#3b82f6',
