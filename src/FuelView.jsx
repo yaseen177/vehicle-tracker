@@ -151,11 +151,13 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     
     async function fetchBatches() {
         const maxBatches = 20;
+        const concurrencyLimit = 5; // Load 5 at a time to prevent rate-limiting
         let loadedCount = 0;
         
         const fetchBatch = async (batch) => {
             try {
                 const res = await fetch(`/api/fuel-prices?batch=${batch}&t=${new Date().getTime()}`); 
+                if (!res.ok) return; 
                 const data = await res.json();
                 
                 if (data.stations && data.stations.length > 0 && isMounted) {
@@ -177,16 +179,20 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                 if (isMounted) {
                     loadedCount++;
                     setProgress(Math.round((loadedCount / maxBatches) * 100));
-                    // Dismiss the loading screen immediately once the FIRST batch returns
                     if (loadedCount >= 1) setLoading(false); 
                 }
             }
         };
 
-        // NEW: Map array to launch all 20 fetch requests concurrently. 
-        const promises = Array.from({ length: maxBatches }, (_, i) => fetchBatch(i + 1));
-        
-        await Promise.all(promises);
+        // Chunked Concurrency avoids the "429 Too Many Requests" error
+        for (let i = 0; i < maxBatches; i += concurrencyLimit) {
+            if (!isMounted) break;
+            const promises = [];
+            for (let j = 1; j <= concurrencyLimit; j++) {
+                if (i + j <= maxBatches) promises.push(fetchBatch(i + j));
+            }
+            await Promise.all(promises);
+        }
         
         if (isMounted) setIsSyncing(false);
         if (isMounted && loading) setLoading(false); 
@@ -326,11 +332,9 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             style={{flex:1, padding:'8px 12px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white'}}
           />
-          {/* LUCIDE SEARCH ICON */}
           <button onClick={handleSearch} className="btn btn-primary" title="Search" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer'}}>
               <Search size={18} />
           </button>
-          {/* LUCIDE MAPPIN ICON */}
           <button 
             onClick={handleMyLocation} 
             className="btn btn-primary" 
@@ -373,17 +377,18 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                 <select 
                     value={sortBy} 
                     onChange={(e) => setSortBy(e.target.value)}
-                    style={{flex: 1, padding:'8px', borderRadius:'6px', border:'1px solid var(--border)', background:'#1f2937', color:'white', fontSize:'0.8rem', cursor:'pointer'}}
+                    style={{flex: 1, minWidth: '130px', padding:'8px', borderRadius:'6px', border:'1px solid var(--border)', background:'#1f2937', color:'white', fontSize:'0.8rem', cursor:'pointer'}}
                 >
                     <option value="smart">Sort by: Smart Sort (Best Overall)</option>
                     <option value="price">Sort by: Price (Lowest)</option>
                     <option value="distance">Sort by: Distance (Nearest)</option>
                     <option value="reliability">Sort by: Reliability (Most Recent)</option>
                 </select>
-                {/* LUCIDE INFO ICON */}
+                
+                {/* FIX: minWidth, height, and flexShrink applied to stop the button getting squished invisible */}
                 <button 
                     onClick={() => setShowSmartInfo(!showSmartInfo)}
-                    style={{background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '6px', width: '36px', cursor: 'pointer', color: '#9ca3af', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+                    style={{background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '6px', minWidth: '36px', height: '36px', flexShrink: 0, cursor: 'pointer', color: '#9ca3af', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
                     title="What is Smart Sort?"
                 >
                     <Info size={18} />
@@ -393,7 +398,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             <select 
                 value={filterBrand} 
                 onChange={(e) => setFilterBrand(e.target.value)}
-                style={{flex: 1, padding:'8px', borderRadius:'6px', border:'1px solid var(--border)', background:'#1f2937', color:'white', fontSize:'0.8rem', cursor:'pointer'}}
+                style={{flex: 1, minWidth: '130px', padding:'8px', borderRadius:'6px', border:'1px solid var(--border)', background:'#1f2937', color:'white', fontSize:'0.8rem', cursor:'pointer'}}
             >
                 <option value="All">All Major Brands</option>
                 <option value="Asda">Asda</option>
@@ -534,7 +539,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
              return (
                  <div key={i} style={{ display: 'flex', flexDirection: 'column' }}>
                     
-                    {/* LUCIDE SPARKLES ICON FOR BADGE */}
                     {sortBy === 'smart' && i === 0 && (
                         <div style={{background: 'linear-gradient(to right, #3b82f6, #8b5cf6)', color: 'white', padding: '4px 10px', borderRadius: '8px 8px 0 0', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', width: 'fit-content', marginLeft: '12px', marginBottom: '-8px', position: 'relative', zIndex: 1, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'}}>
                             <Sparkles size={14} /> Top Recommended 
@@ -618,7 +622,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                                 {openStatus ? openStatus.text : ""}
                             </div>
 
-                            {/* LUCIDE CHEVRON ICONS */}
                             <button 
                                 onClick={(e) => {
                                     e.stopPropagation();

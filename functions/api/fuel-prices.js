@@ -34,7 +34,6 @@ export async function onRequest(context) {
     };
 
     try {
-        // 1. OAUTH TOKEN HUNTER (Now fully concurrent for zero latency)
         const now = Date.now();
         if (!cachedToken || now >= tokenExpiry) {
             const formBody = new URLSearchParams();
@@ -58,8 +57,6 @@ export async function onRequest(context) {
             let tokenRes = null;
 
             try {
-                // Fire all authentication requests simultaneously. 
-                // Promise.any resolves instantly when the FIRST successful response comes back.
                 tokenRes = await Promise.any(endpointsToTest.map(async (ep) => {
                     const isForm = ep.type === "form";
                     const res = await fetch(ep.url, {
@@ -70,9 +67,7 @@ export async function onRequest(context) {
                     if (res.ok) return res;
                     throw new Error("Endpoint failed");
                 }));
-            } catch (aggregateError) {
-                // Catches if ALL endpoints fail
-            }
+            } catch (aggregateError) {}
 
             if (!tokenRes || !tokenRes.ok) throw new Error("Auth Failed on all paths.");
 
@@ -86,7 +81,6 @@ export async function onRequest(context) {
             tokenExpiry = now + (expiresIn - 60) * 1000;
         }
 
-        // 2. FETCH DATA (Batched or All)
         let batchesToFetch = [];
         if (batchParam) {
             batchesToFetch = [parseInt(batchParam, 10)];
@@ -127,13 +121,17 @@ export async function onRequest(context) {
                 if (!res) continue;
                 if (res.locs.length === 0) hitEnd = true;
                 allLocations.push(...res.locs);
-                res.prices.forEach(p => { if (p.node_id) allPrices[p.node_id] = p.fuel_prices || []; });
+                
+                // ROBUST EXTRACTION: Catches Asda/Tesco schema variations
+                res.prices.forEach(p => { 
+                    const pid = p.node_id || p.id || p.site_id;
+                    if (pid) allPrices[pid] = p.fuel_prices || p.prices || []; 
+                });
             }
 
             if (hitEnd) break;
         }
 
-        // 3. CLEANING HELPERS
         const cleanBrandName = (rawName) => {
             if (!rawName) return "Unknown";
             const name = rawName.toUpperCase();
@@ -161,23 +159,44 @@ export async function onRequest(context) {
             return parseFloat(price.toFixed(1));
         };
 
-        // 4. FORMAT
         const mappedStations = allLocations.map(station => {
-            const sid = station.node_id || station.id;
+            const sid = station.node_id || station.id || station.site_id;
             const stationPricesArray = allPrices[sid] || [];
+            
             let e10 = null, b7 = null;
-
             let stationTimestamp = ""; 
 
-            stationPricesArray.forEach(fp => {
-                if (fp.fuel_type === 'E10' || fp.fuel_type === 'E10_STANDARD' || fp.fuel_type === 'E5') e10 = formatPrice(fp.price);
-                if (fp.fuel_type === 'B7' || fp.fuel_type === 'B7_STANDARD') b7 = formatPrice(fp.price);
+            // ROBUST EXTRACTION: Handles Array Schema
+            if (Array.isArray(stationPricesArray)) {
+                stationPricesArray.forEach(fp => {
+                    const fType = (fp.fuel_type || fp.type || "").toUpperCase();
+                    if (fType === 'E10' || fType === 'E10_STANDARD' || fType === 'E5' || fType === 'UNLEADED') e10 = formatPrice(fp.price);
+                    if (fType === 'B7' || fType === 'B7_STANDARD' || fType === 'DIESEL') b7 = formatPrice(fp.price);
 
-                const fpTime = fp.price_change_effective_timestamp || fp.price_last_updated || "";
-                if (fpTime > stationTimestamp) {
-                    stationTimestamp = fpTime;
+                    const fpTime = fp.price_change_effective_timestamp || fp.price_last_updated || fp.last_updated || "";
+                    if (fpTime > stationTimestamp) stationTimestamp = fpTime;
+                });
+            } else if (typeof stationPricesArray === 'object' && stationPricesArray !== null) {
+                // ROBUST EXTRACTION: Handles Object Schema
+                e10 = formatPrice(stationPricesArray.E10 || stationPricesArray.E5 || stationPricesArray.Unleaded);
+                b7 = formatPrice(stationPricesArray.B7 || stationPricesArray.Diesel);
+                stationTimestamp = stationPricesArray.last_updated || "";
+            }
+
+            // ROBUST EXTRACTION: Fallback if prices are embedded directly in station object
+            if (!e10 && !b7 && station.prices) {
+                const sp = station.prices;
+                if (Array.isArray(sp)) {
+                    sp.forEach(fp => {
+                        const ft = (fp.fuel_type || fp.type || "").toUpperCase();
+                        if (ft === 'E10' || ft === 'E10_STANDARD' || ft === 'E5') e10 = formatPrice(fp.price);
+                        if (ft === 'B7' || ft === 'B7_STANDARD') b7 = formatPrice(fp.price);
+                    });
+                } else if (typeof sp === 'object') {
+                    e10 = formatPrice(sp.E10 || sp.E5 || sp.Unleaded);
+                    b7 = formatPrice(sp.B7 || sp.Diesel);
                 }
-            });
+            }
 
             const lat = station.location?.latitude || station.location?.lat || station.latitude || 0;
             const lng = station.location?.longitude || station.location?.lng || station.longitude || 0;
@@ -228,7 +247,6 @@ export async function onRequest(context) {
 
         const uniqueStations = Array.from(new Map(mappedStations.map(s => [s.site_id, s])).values());
 
-        // 5. SEND RESPONSE 
         const json = JSON.stringify({ 
             updated: new Date().toISOString(), 
             count: uniqueStations.length, 
