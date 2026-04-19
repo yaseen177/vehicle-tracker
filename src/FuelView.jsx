@@ -314,29 +314,39 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
   };
 
   const getRectBoundsFromCircle = (centerLoc, radiusMiles) => {
-      // 1 degree of Latitude is roughly 69 miles
-      const offsetLat = radiusMiles / 69.0; 
-      // Longitude offset requires Cosine of Latitude adjustment
-      const offsetLng = radiusMiles / (69.0 * Math.cos(centerLoc.lat * (Math.PI / 180)));
-      
-      return {
-          north: centerLoc.lat + offsetLat,
-          south: centerLoc.lat - offsetLat,
-          east: centerLoc.lng + offsetLng,
-          west: centerLoc.lng - offsetLng
-      };
-  };
+    // 1 degree of Latitude is roughly 69 miles
+    const offsetLat = radiusMiles / 69.0; 
+    // Longitude offset requires Cosine of Latitude adjustment
+    const offsetLng = radiusMiles / (69.0 * Math.cos(centerLoc.lat * (Math.PI / 180)));
+    
+    return {
+        north: centerLoc.lat + offsetLat,
+        south: centerLoc.lat - offsetLat,
+        east: centerLoc.lng + offsetLng,
+        west: centerLoc.lng - offsetLng
+    };
+};
 
-  const toggleShape = (shape) => {
-      if (shape === searchShape) return;
-      
-      if (shape === 'rectangle') {
-          // Perfectly frame the existing circle mathematically
-          setRectBounds(getRectBoundsFromCircle(searchLocation, searchRadius));
-      } 
-      
-      setSearchShape(shape);
-  };
+const toggleShape = (shape) => {
+    if (shape === searchShape) return;
+    
+    if (shape === 'rectangle') {
+        // 1. Circle -> Rectangle: Perfectly frame the existing circle mathematically
+        setRectBounds(getRectBoundsFromCircle(searchLocation, searchRadius));
+    } else if (shape === 'circle' && rectBounds) {
+        // 2. Rectangle -> Circle: Find the exact midpoint of the rectangle bounds
+        const centerLat = (rectBounds.north + rectBounds.south) / 2;
+        const centerLng = (rectBounds.east + rectBounds.west) / 2;
+        
+        setSearchLocation({ lat: centerLat, lng: centerLng });
+        
+        // Calculate the new radius (distance from the new center to the North edge)
+        const newRadius = getDistance(centerLat, centerLng, rectBounds.north, centerLng);
+        setSearchRadius(newRadius);
+    }
+    
+    setSearchShape(shape);
+};
 
   const handleRadiusDropdown = (e) => {
       const val = e.target.value;
