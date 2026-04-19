@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { GoogleMap, useJsApiLoader, Marker, InfoWindow, DirectionsRenderer } from '@react-google-maps/api';
+import { GoogleMap, useJsApiLoader, Marker, InfoWindow, DirectionsRenderer, Autocomplete } from '@react-google-maps/api';
 import { Search, MapPin, Info, Sparkles, ChevronDown, ChevronUp, Route as RouteIcon, Navigation } from 'lucide-react'; 
 
 const containerStyle = { width: '100%', height: '45vh', minHeight: '300px' };
@@ -132,9 +132,11 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   
   const [mapBounds, setMapBounds] = useState(null);
   const [mapCenter, setMapCenter] = useState({ lat: 51.5074, lng: -0.1278 }); 
+  
+  // NEW: Store raw GPS coordinates behind the scenes
+  const [userCoords, setUserCoords] = useState(null);
 
-  // --- NEW: View Mode & Routing States ---
-  const [viewMode, setViewMode] = useState('area'); // 'area' | 'route'
+  const [viewMode, setViewMode] = useState('area'); 
   const [routeOrigin, setRouteOrigin] = useState("");
   const [routeDestination, setRouteDestination] = useState("");
   const [directionsResult, setDirectionsResult] = useState(null);
@@ -147,7 +149,11 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [searchName, setSearchName] = useState(''); 
   const [showSmartInfo, setShowSmartInfo] = useState(false); 
 
-  // IMPORTANT: Added 'geometry' library to enable the route filtering math
+  // NEW: Autocomplete Refs
+  const autocompleteAreaRef = useRef(null);
+  const autocompleteOriginRef = useRef(null);
+  const autocompleteDestRef = useRef(null);
+
   const [libraries] = useState(['places', 'geometry']);
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
@@ -214,14 +220,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     }
     
     fetchBatches();
-    
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (p) => setMapCenter({ lat: p.coords.latitude, lng: p.coords.longitude }),
-        () => console.warn("GPS Permission denied")
-      );
-    }
-    
     return () => { isMounted = false; };
   }, []);
 
@@ -234,8 +232,45 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     }
   }, [viewMode]);
 
+  // --- UPDATED GEOLOCATION HANDLING ---
+  const handleMyLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (p) => {
+          const loc = { lat: p.coords.latitude, lng: p.coords.longitude };
+          setUserCoords(loc);
+          setMapCenter(loc);
+          
+          // Display friendly text instead of raw coordinates
+          if (viewMode === 'route') {
+              setRouteOrigin("Your Location");
+          } else {
+              setPostcodeQuery("Your Location");
+              if (mapRef.current) {
+                mapRef.current.panTo(loc);
+                mapRef.current.setZoom(14);
+              }
+          }
+        },
+        (err) => alert(`Unable to retrieve location. Please check browser permissions. (${err.message})`),
+        // Force high accuracy to bypass inaccurate IP-based estimation
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 } 
+      );
+    } else {
+      alert("Geolocation is not supported by your browser.");
+    }
+  };
+
   const handleAreaSearch = () => {
     if (!postcodeQuery || !window.google || !mapRef.current) return;
+    
+    // Check if user clicked search while "Your Location" is active
+    if (postcodeQuery === "Your Location" && userCoords) {
+        mapRef.current.panTo(userCoords);
+        mapRef.current.setZoom(14);
+        return;
+    }
+
     const geocoder = new window.google.maps.Geocoder();
     geocoder.geocode({ 'address': postcodeQuery + ", UK" }, (results, status) => {
       if (status === 'OK' && results[0]) {
@@ -248,22 +283,35 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     });
   };
 
-  // --- NEW: Calculate Route Logic ---
   const handleRouteSearch = () => {
     if (!routeOrigin || !routeDestination || !window.google) return;
     
+    // Inject literal coordinates if the user chose "Your Location"
+    let finalOrigin = routeOrigin;
+    if (routeOrigin === "Your Location" && userCoords) {
+        finalOrigin = new window.google.maps.LatLng(userCoords.lat, userCoords.lng);
+    } else if (!finalOrigin.toLowerCase().includes('uk') && !finalOrigin.toLowerCase().includes('united kingdom')) {
+        finalOrigin += ", UK";
+    }
+
+    let finalDest = routeDestination;
+    if (routeDestination === "Your Location" && userCoords) {
+        finalDest = new window.google.maps.LatLng(userCoords.lat, userCoords.lng);
+    } else if (!finalDest.toLowerCase().includes('uk') && !finalDest.toLowerCase().includes('united kingdom')) {
+        finalDest += ", UK";
+    }
+
     const directionsService = new window.google.maps.DirectionsService();
     
     directionsService.route(
       {
-        origin: routeOrigin + ", UK",
-        destination: routeDestination + ", UK",
+        origin: finalOrigin,
+        destination: finalDest,
         travelMode: window.google.maps.TravelMode.DRIVING,
       },
       (result, status) => {
         if (status === window.google.maps.DirectionsStatus.OK) {
           setDirectionsResult(result);
-          // Set map center to origin so distances in the list are relative to the start point
           setMapCenter({ 
               lat: result.routes[0].legs[0].start_location.lat(), 
               lng: result.routes[0].legs[0].start_location.lng() 
@@ -275,32 +323,9 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     );
   };
 
-  const handleMyLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (p) => {
-          const loc = { lat: p.coords.latitude, lng: p.coords.longitude };
-          setMapCenter(loc);
-          if (viewMode === 'route') {
-              setRouteOrigin(`${p.coords.latitude}, ${p.coords.longitude}`);
-          } else {
-              if (mapRef.current) {
-                mapRef.current.panTo(loc);
-                mapRef.current.setZoom(14);
-              }
-          }
-        },
-        () => alert("Unable to retrieve your location.")
-      );
-    } else {
-      alert("Geolocation is not supported by your browser.");
-    }
-  };
-
   const visibleStations = useMemo(() => {
     if (!stations.length) return [];
     
-    // Create Polyline geometry strictly once for route filtering
     let routePolyline = null;
     if (viewMode === 'route' && directionsResult) {
         routePolyline = new window.google.maps.Polyline({ path: directionsResult.routes[0].overview_path });
@@ -315,13 +340,11 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       
       const stationLoc = new window.google.maps.LatLng(s.location.latitude, s.location.longitude);
       
-      // Determine visibility based on selected mode
       if (viewMode === 'area') {
          if (!mapBounds) return false;
          return mapBounds.contains(stationLoc);
       } else {
          if (!routePolyline) return false;
-         // Tolerance 0.015 degrees is roughly a 1-mile corridor along the route
          return window.google.maps.geometry.poly.isLocationOnEdge(stationLoc, routePolyline, 0.015);
       }
     });
@@ -402,16 +425,33 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             </button>
         </div>
 
-        {/* CONDITIONAL SEARCH INPUTS */}
+        {/* INPUT FIELDS WITH AUTOCOMPLETE */}
         {viewMode === 'area' ? (
             <div style={{display:'flex', gap:'8px'}}>
-                <input 
-                    placeholder="Search map location (e.g. London)" 
-                    value={postcodeQuery}
-                    onChange={(e) => setPostcodeQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleAreaSearch()}
-                    style={{flex:1, padding:'8px 12px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white'}}
-                />
+                <div style={{flex: 1}}>
+                    <Autocomplete
+                        onLoad={ref => autocompleteAreaRef.current = ref}
+                        onPlaceChanged={() => {
+                            const place = autocompleteAreaRef.current.getPlace();
+                            if(place?.formatted_address) {
+                                setPostcodeQuery(place.formatted_address);
+                                if(place.geometry?.location && mapRef.current) {
+                                    mapRef.current.panTo(place.geometry.location);
+                                    mapRef.current.setZoom(14);
+                                }
+                            }
+                        }}
+                        options={{ componentRestrictions: { country: "gb" } }}
+                    >
+                        <input 
+                            placeholder="Search map location (e.g. London)" 
+                            value={postcodeQuery}
+                            onChange={(e) => setPostcodeQuery(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAreaSearch()}
+                            style={{width:'100%', padding:'8px 12px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white', boxSizing:'border-box'}}
+                        />
+                    </Autocomplete>
+                </div>
                 <button onClick={handleAreaSearch} className="btn btn-primary" title="Search" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer'}}>
                     <Search size={18} />
                 </button>
@@ -427,12 +467,23 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         ) : (
             <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
                 <div style={{display: 'flex', gap: '8px'}}>
-                    <input 
-                        placeholder="Origin (e.g. Manchester)" 
-                        value={routeOrigin}
-                        onChange={(e) => setRouteOrigin(e.target.value)}
-                        style={{flex:1, padding:'8px 12px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white'}}
-                    />
+                    <div style={{flex: 1}}>
+                        <Autocomplete
+                            onLoad={ref => autocompleteOriginRef.current = ref}
+                            onPlaceChanged={() => {
+                                const place = autocompleteOriginRef.current.getPlace();
+                                if(place?.formatted_address) setRouteOrigin(place.formatted_address);
+                            }}
+                            options={{ componentRestrictions: { country: "gb" } }}
+                        >
+                            <input 
+                                placeholder="Origin (e.g. Manchester)" 
+                                value={routeOrigin}
+                                onChange={(e) => setRouteOrigin(e.target.value)}
+                                style={{width:'100%', padding:'8px 12px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white', boxSizing:'border-box'}}
+                            />
+                        </Autocomplete>
+                    </div>
                     <button 
                         onClick={handleMyLocation} 
                         className="btn btn-primary" 
@@ -443,13 +494,24 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                     </button>
                 </div>
                 <div style={{display: 'flex', gap: '8px'}}>
-                    <input 
-                        placeholder="Destination (e.g. London)" 
-                        value={routeDestination}
-                        onChange={(e) => setRouteDestination(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleRouteSearch()}
-                        style={{flex:1, padding:'8px 12px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white'}}
-                    />
+                    <div style={{flex: 1}}>
+                        <Autocomplete
+                            onLoad={ref => autocompleteDestRef.current = ref}
+                            onPlaceChanged={() => {
+                                const place = autocompleteDestRef.current.getPlace();
+                                if(place?.formatted_address) setRouteDestination(place.formatted_address);
+                            }}
+                            options={{ componentRestrictions: { country: "gb" } }}
+                        >
+                            <input 
+                                placeholder="Destination (e.g. London)" 
+                                value={routeDestination}
+                                onChange={(e) => setRouteDestination(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleRouteSearch()}
+                                style={{width:'100%', padding:'8px 12px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white', boxSizing:'border-box'}}
+                            />
+                        </Autocomplete>
+                    </div>
                     <button onClick={handleRouteSearch} style={{background: '#8b5cf6', color: 'white', padding: '8px 16px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'}}>
                         Calculate <RouteIcon size={16} />
                     </button>
@@ -578,7 +640,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         >
           <Marker position={mapCenter} icon="https://maps.google.com/mapfiles/ms/icons/blue-dot.png" />
           
-          {/* RENDER THE CALCULATED ROUTE IF IN ROUTE MODE */}
           {viewMode === 'route' && directionsResult && (
              <DirectionsRenderer
                 directions={directionsResult}
