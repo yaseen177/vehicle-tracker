@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { GoogleMap, useJsApiLoader, Marker, InfoWindow, DirectionsRenderer, Autocomplete, Circle } from '@react-google-maps/api';
+import { GoogleMap, useJsApiLoader, Marker, InfoWindow, DirectionsRenderer, Autocomplete, Circle, Rectangle } from '@react-google-maps/api';
 import { Search, MapPin, Info, Sparkles, ChevronDown, ChevronUp, Route as RouteIcon, Navigation, TrendingDown, TrendingUp } from 'lucide-react'; 
 import { db } from './firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -134,10 +134,15 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
   
   const [mapCenter, setMapCenter] = useState({ lat: 51.5074, lng: -0.1278 }); 
   const [searchLocation, setSearchLocation] = useState({ lat: 51.5074, lng: -0.1278 }); 
+  const [mapBounds, setMapBounds] = useState(null);
   
-  // NEW: State for Search Radius (in Miles)
   const [searchRadius, setSearchRadius] = useState(5);
   const circleRef = useRef(null);
+  
+  // --- NEW: Search Shape State ---
+  const [searchShape, setSearchShape] = useState('circle'); // 'circle' | 'rectangle'
+  const [rectBounds, setRectBounds] = useState(null);
+  const rectRef = useRef(null);
 
   const [userCoords, setUserCoords] = useState(null);
   const [profileCoords, setProfileCoords] = useState({ home: '', work: '' });
@@ -261,7 +266,7 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
               setPostcodeQuery("Your Location");
               if (mapRef.current) {
                 mapRef.current.panTo(loc);
-                mapRef.current.setZoom(13); // Default zoom for 5 miles
+                mapRef.current.setZoom(13);
               }
           }
         },
@@ -288,18 +293,23 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
         const loc = { lat: results[0].geometry.location.lat(), lng: results[0].geometry.location.lng() };
         setSearchLocation(loc);
         mapRef.current.panTo(loc);
+        
+        // Auto-generate rect bounds if rectangle mode is active
+        if (searchShape === 'rectangle') {
+            generateRectBounds(loc);
+        }
       } else {
         alert("Location not found!");
       }
     });
   };
 
-  // --- NEW: Handlers for Radius changes ---
   const handleRadiusDropdown = (e) => {
       const val = e.target.value;
       if (val === "custom") return;
       const newRadius = Number(val);
       setSearchRadius(newRadius);
+      setSearchShape('circle'); // Force back to circle if dropdown used
       
       if (mapRef.current) {
           let zoom = 14;
@@ -314,9 +324,39 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
 
   const handleCircleDrag = () => {
       if (circleRef.current) {
-          // Convert meters returned by Google to Miles
           const newRadiusMeters = circleRef.current.getRadius();
           setSearchRadius(newRadiusMeters / 1609.34);
+      }
+  };
+
+  const handleRectDrag = () => {
+      if (rectRef.current) {
+          const b = rectRef.current.getBounds();
+          setRectBounds({
+              north: b.getNorthEast().lat(),
+              south: b.getSouthWest().lat(),
+              east: b.getNorthEast().lng(),
+              west: b.getSouthWest().lng()
+          });
+      }
+  };
+
+  const generateRectBounds = (centerLoc) => {
+      // Rough approximation: 1 mile is ~0.014 degrees
+      const offsetLat = searchRadius * 0.014;
+      const offsetLng = searchRadius * 0.02; // Lng offset needs to be wider in UK
+      setRectBounds({
+          north: centerLoc.lat + offsetLat,
+          south: centerLoc.lat - offsetLat,
+          east: centerLoc.lng + offsetLng,
+          west: centerLoc.lng - offsetLng
+      });
+  };
+
+  const toggleShape = (shape) => {
+      setSearchShape(shape);
+      if (shape === 'rectangle' && !rectBounds) {
+          generateRectBounds(searchLocation);
       }
   };
 
@@ -389,9 +429,18 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
       const stationLoc = new window.google.maps.LatLng(s.location.latitude, s.location.longitude);
       
       if (viewMode === 'area') {
-         // Strict Radius Filtering using math instead of bounding box
-         const distFromSearch = getDistance(searchLocation.lat, searchLocation.lng, s.location.latitude, s.location.longitude);
-         return distFromSearch <= searchRadius;
+         if (searchShape === 'circle') {
+             const distFromSearch = getDistance(searchLocation.lat, searchLocation.lng, s.location.latitude, s.location.longitude);
+             return distFromSearch <= searchRadius;
+         } else if (searchShape === 'rectangle' && rectBounds) {
+             return (
+                 s.location.latitude <= rectBounds.north &&
+                 s.location.latitude >= rectBounds.south &&
+                 s.location.longitude <= rectBounds.east &&
+                 s.location.longitude >= rectBounds.west
+             );
+         }
+         return false;
       } else {
          if (!routePolyline) return false;
 
@@ -446,7 +495,7 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
       });
     }
     return [];
-  }, [isLoaded, stations, searchLocation, searchRadius, fuelType, filterBrand, searchName, sortBy, viewMode, directionsResult]); 
+  }, [isLoaded, stations, searchLocation, searchRadius, searchShape, rectBounds, fuelType, filterBrand, searchName, sortBy, viewMode, directionsResult]); 
 
   useEffect(() => {
     if (visibleStations.length > 5) {
@@ -515,6 +564,8 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
                                     const loc = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
                                     setSearchLocation(loc);
                                     mapRef.current.panTo(loc);
+                                    
+                                    if (searchShape === 'rectangle') generateRectBounds(loc);
                                 }
                             }
                         }}
@@ -530,9 +581,8 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
                     </Autocomplete>
                 </div>
 
-                {/* --- NEW: RADIUS SELECTOR --- */}
                 <select 
-                    value={[1, 3, 5, 10, 20].includes(searchRadius) ? searchRadius : "custom"} 
+                    value={searchShape === 'rectangle' ? "custom" : ([1, 3, 5, 10, 20].includes(searchRadius) ? searchRadius : "custom")} 
                     onChange={handleRadiusDropdown}
                     style={{padding:'8px', borderRadius:'8px', border:'1px solid var(--border)', background:'var(--background)', color:'white', flexShrink: 0, cursor: 'pointer'}}
                 >
@@ -541,8 +591,8 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
                     <option value={5}>+ 5 Miles</option>
                     <option value={10}>+ 10 Miles</option>
                     <option value={20}>+ 20 Miles</option>
-                    {![1, 3, 5, 10, 20].includes(searchRadius) && (
-                        <option value="custom">Custom ({searchRadius.toFixed(1)}m)</option>
+                    {(![1, 3, 5, 10, 20].includes(searchRadius) || searchShape === 'rectangle') && (
+                        <option value="custom">Custom Area</option>
                     )}
                 </select>
 
@@ -659,7 +709,7 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
            </div>
            
            <div style={{fontSize:'0.75rem', color:'#9ca3af', fontStyle:'italic', display: 'flex', flexDirection: 'column', alignItems: 'flex-end'}}>
-             <span>{visibleStations.length} stations {viewMode === 'route' ? 'along route' : 'in radius'}</span>
+             <span>{visibleStations.length} stations {viewMode === 'route' ? 'along route' : 'in search area'}</span>
              {appSyncTime && <span style={{fontSize: '0.7rem', opacity: 0.8}}>App Synced: {appSyncTime}</span>}
            </div>
         </div>
@@ -742,9 +792,28 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
       </div>
 
       {/* --- MAP --- */}
-      <div style={{height:'45vh', minHeight:'250px', borderRadius:'12px', overflow:'hidden', border:'1px solid var(--border)', flexShrink:0}}>
+      <div style={{height:'45vh', minHeight:'250px', borderRadius:'12px', overflow:'hidden', border:'1px solid var(--border)', position: 'relative', flexShrink:0}}>
+        
+        {/* SHAPE SELECTOR OVERLAY */}
+        {viewMode === 'area' && (
+            <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 10, display: 'flex', background: 'rgba(15, 23, 42, 0.9)', borderRadius: '8px', padding: '4px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}>
+                <button 
+                    onClick={() => toggleShape('circle')} 
+                    style={{ background: searchShape === 'circle' ? '#3b82f6' : 'transparent', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', transition: 'background 0.2s' }}
+                >
+                    ⭕ Circle
+                </button>
+                <button 
+                    onClick={() => toggleShape('rectangle')} 
+                    style={{ background: searchShape === 'rectangle' ? '#3b82f6' : 'transparent', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', transition: 'background 0.2s' }}
+                >
+                    ⬛ Rectangle
+                </button>
+            </div>
+        )}
+
         <GoogleMap
-          mapContainerStyle={containerStyle}
+          mapContainerStyle={{width: '100%', height: '100%'}}
           center={mapCenter}
           zoom={13}
           onLoad={map => mapRef.current = map}
@@ -753,17 +822,33 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
             styles: mapStyles,
             disableDefaultUI: true,
             clickableIcons: false,
-            gestureHandling: "greedy" // TRAPS GESTURES TO PREVENT ACCIDENTAL PAGE ZOOMING ON MOBILE
+            gestureHandling: "greedy" 
           }}
         >
-          {/* SEARCH AREA CIRCLE WITH DRAG HANDLE */}
-          {viewMode === 'area' && (
+          {/* SEARCH AREA SHAPES WITH DRAG HANDLES */}
+          {viewMode === 'area' && searchShape === 'circle' && (
               <Circle
                 onLoad={(circle) => circleRef.current = circle}
                 center={searchLocation}
-                radius={searchRadius * 1609.34} // Convert Miles to Meters
-                editable={true} // Allows dragging the edge to resize
+                radius={searchRadius * 1609.34} 
+                editable={true} 
                 onRadiusChanged={handleCircleDrag}
+                options={{
+                  fillColor: '#3b82f6',
+                  fillOpacity: 0.1,
+                  strokeColor: '#3b82f6',
+                  strokeOpacity: 0.4,
+                  strokeWeight: 2
+                }}
+              />
+          )}
+
+          {viewMode === 'area' && searchShape === 'rectangle' && rectBounds && (
+              <Rectangle
+                onLoad={(rect) => rectRef.current = rect}
+                bounds={rectBounds}
+                editable={true}
+                onBoundsChanged={handleRectDrag}
                 options={{
                   fillColor: '#3b82f6',
                   fillOpacity: 0.1,
@@ -859,7 +944,7 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
              <div style={{padding: '20px', textAlign: 'center', color: '#9ca3af', fontSize: '0.9rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px dashed rgba(255,255,255,0.1)'}}>
                  {viewMode === 'route' && !directionsResult 
                     ? "Enter an Origin and Destination to find stations along your journey."
-                    : "No stations found inside the search radius."}
+                    : "No stations found inside the search area."}
              </div>
          )}
 
