@@ -1823,7 +1823,7 @@ const Badge = ({ date }) => {
   return <span style={{color: color, fontWeight: 700, fontSize:'0.9rem'}}>{d < 0 ? 'Expired' : `${d} days left`}</span>;
 };
 
-// --- UPDATED PROFILE VIEW (Added Home & Work Locations) ---
+// --- UPDATED PROFILE VIEW (Standardised Maps Loader) ---
 function ProfileView({ user, showToast, onBack, onSignOut, googleMapsApiKey }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -1835,9 +1835,10 @@ function ProfileView({ user, showToast, onBack, onSignOut, googleMapsApiKey }) {
   const homeRef = useRef(null);
   const workRef = useRef(null);
   
-  const [libraries] = useState(['places']);
+  // FIX: Standardised libraries and ID to exactly match FuelView to prevent loader collisions
+  const [libraries] = useState(['places', 'geometry']);
   const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script-profile',
+    id: 'google-map-script', 
     googleMapsApiKey: googleMapsApiKey,
     libraries: libraries
   });
@@ -1939,7 +1940,6 @@ function ProfileView({ user, showToast, onBack, onSignOut, googleMapsApiKey }) {
             }}
           />
 
-          {/* NEW SAVED LOCATIONS */}
           <h3 style={{color:'white', marginTop: '10px', marginBottom: '8px'}}>Saved Locations</h3>
           <p style={{marginBottom:'20px', color:'#9ca3af', fontSize: '0.85rem'}}>
             These will appear as quick-action shortcuts in the Route Planner.
