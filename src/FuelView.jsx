@@ -151,8 +151,10 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     
     async function fetchBatches() {
         const maxBatches = 20;
-        const concurrencyLimit = 5; // Load 5 at a time to prevent rate-limiting
+        // FIX: Reduced limit prevents the UK API from 429 rate-limiting the requests.
+        const concurrencyLimit = 3; 
         let loadedCount = 0;
+        let hitEnd = false; // FIX: Allows early exit if the API runs out of batches
         
         const fetchBatch = async (batch) => {
             try {
@@ -160,6 +162,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                 if (!res.ok) return; 
                 const data = await res.json();
                 
+                if (data.hitEnd) hitEnd = true;
+
                 if (data.stations && data.stations.length > 0 && isMounted) {
                     setStations(prev => {
                         const newMap = new Map();
@@ -184,9 +188,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             }
         };
 
-        // Chunked Concurrency avoids the "429 Too Many Requests" error
         for (let i = 0; i < maxBatches; i += concurrencyLimit) {
-            if (!isMounted) break;
+            if (!isMounted || hitEnd) break;
             const promises = [];
             for (let j = 1; j <= concurrencyLimit; j++) {
                 if (i + j <= maxBatches) promises.push(fetchBatch(i + j));
@@ -194,8 +197,11 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             await Promise.all(promises);
         }
         
-        if (isMounted) setIsSyncing(false);
-        if (isMounted && loading) setLoading(false); 
+        if (isMounted) {
+            setProgress(100);
+            setIsSyncing(false);
+            if (loading) setLoading(false);
+        }
     }
     
     fetchBatches();
@@ -385,7 +391,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
                     <option value="reliability">Sort by: Reliability (Most Recent)</option>
                 </select>
                 
-                {/* FIX: minWidth, height, and flexShrink applied to stop the button getting squished invisible */}
                 <button 
                     onClick={() => setShowSmartInfo(!showSmartInfo)}
                     style={{background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '6px', minWidth: '36px', height: '36px', flexShrink: 0, cursor: 'pointer', color: '#9ca3af', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
