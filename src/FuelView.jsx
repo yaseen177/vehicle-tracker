@@ -166,15 +166,12 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
         const maxBatches = 20;
         const concurrencyLimit = 3; 
         let loadedCount = 0;
-        let hitEnd = false;
         
         const fetchBatch = async (batch) => {
             try {
                 const res = await fetch(`/api/fuel-prices?batch=${batch}&t=${new Date().getTime()}`); 
                 if (!res.ok) return; 
                 const data = await res.json();
-                
-                if (data.hitEnd) hitEnd = true;
 
                 if (data.stations && data.stations.length > 0 && isMounted) {
                     setStations(prev => {
@@ -200,8 +197,9 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
             }
         };
 
+        // THE FIX: hitEnd abort completely removed. It relentlessly loops 20 times.
         for (let i = 0; i < maxBatches; i += concurrencyLimit) {
-            if (!isMounted || hitEnd) break;
+            if (!isMounted) break;
             const promises = [];
             for (let j = 1; j <= concurrencyLimit; j++) {
                 if (i + j <= maxBatches) promises.push(fetchBatch(i + j));
@@ -320,13 +318,11 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     if (!isLoaded || !window.google || !stations.length) return [];
     
     let routePolyline = null;
-    let startCoords = null; // NEW
-    let endCoords = null;   // NEW
+    let startCoords = null;
+    let endCoords = null;
 
     if (viewMode === 'route' && directionsResult) {
         routePolyline = new window.google.maps.Polyline({ path: directionsResult.routes[0].overview_path });
-        
-        // Extract exact coordinates for Point A and Point B
         const leg = directionsResult.routes[0].legs[0];
         startCoords = { lat: leg.start_location.lat(), lng: leg.start_location.lng() };
         endCoords = { lat: leg.end_location.lat(), lng: leg.end_location.lng() };
@@ -347,23 +343,15 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       } else {
          if (!routePolyline) return false;
 
-         // --- THE INTELLIGENT DUMBBELL RADIUS ---
-         
-         // 1. Is it within 3 miles of the Origin?
          const distFromStart = getDistance(startCoords.lat, startCoords.lng, s.location.latitude, s.location.longitude);
          if (distFromStart <= 3.0) return true;
 
-         // 2. Is it within 3 miles of the Destination?
          const distFromEnd = getDistance(endCoords.lat, endCoords.lng, s.location.latitude, s.location.longitude);
          if (distFromEnd <= 3.0) return true;
 
-         // 3. Is it strictly along the route? (Tight ~1 mile tolerance)
-         // 0.015 degrees is roughly 1 mile. Change to 0.007 for ~0.5 miles.
          return window.google.maps.geometry.poly.isLocationOnEdge(stationLoc, routePolyline, 0.015);
       }
     });
-
-    // ... [Rest of your sorting logic remains exactly the same]
 
     if (local.length > 0) {
       const avgPrice = local.reduce((acc, s) => acc + s.prices[fuelType], 0) / local.length;
@@ -406,7 +394,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       });
     }
     return [];
-  }, [isLoaded, stations, mapBounds, mapCenter, fuelType, filterBrand, searchName, sortBy, viewMode, directionsResult]); // FIX: Added isLoaded dependency
+  }, [isLoaded, stations, mapBounds, mapCenter, fuelType, filterBrand, searchName, sortBy, viewMode, directionsResult]); 
 
   if (loading || !isLoaded) return (
       <div style={{display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', padding:'20px', textAlign:'center'}}>
