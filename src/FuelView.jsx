@@ -133,7 +133,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [mapBounds, setMapBounds] = useState(null);
   const [mapCenter, setMapCenter] = useState({ lat: 51.5074, lng: -0.1278 }); 
   
-  // NEW: Store raw GPS coordinates behind the scenes
   const [userCoords, setUserCoords] = useState(null);
 
   const [viewMode, setViewMode] = useState('area'); 
@@ -149,7 +148,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const [searchName, setSearchName] = useState(''); 
   const [showSmartInfo, setShowSmartInfo] = useState(false); 
 
-  // NEW: Autocomplete Refs
   const autocompleteAreaRef = useRef(null);
   const autocompleteOriginRef = useRef(null);
   const autocompleteDestRef = useRef(null);
@@ -232,7 +230,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
     }
   }, [viewMode]);
 
-  // --- UPDATED GEOLOCATION HANDLING ---
   const handleMyLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -241,7 +238,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
           setUserCoords(loc);
           setMapCenter(loc);
           
-          // Display friendly text instead of raw coordinates
           if (viewMode === 'route') {
               setRouteOrigin("Your Location");
           } else {
@@ -253,7 +249,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
           }
         },
         (err) => alert(`Unable to retrieve location. Please check browser permissions. (${err.message})`),
-        // Force high accuracy to bypass inaccurate IP-based estimation
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 } 
       );
     } else {
@@ -264,7 +259,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const handleAreaSearch = () => {
     if (!postcodeQuery || !window.google || !mapRef.current) return;
     
-    // Check if user clicked search while "Your Location" is active
     if (postcodeQuery === "Your Location" && userCoords) {
         mapRef.current.panTo(userCoords);
         mapRef.current.setZoom(14);
@@ -286,7 +280,6 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   const handleRouteSearch = () => {
     if (!routeOrigin || !routeDestination || !window.google) return;
     
-    // Inject literal coordinates if the user chose "Your Location"
     let finalOrigin = routeOrigin;
     if (routeOrigin === "Your Location" && userCoords) {
         finalOrigin = new window.google.maps.LatLng(userCoords.lat, userCoords.lng);
@@ -324,7 +317,8 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
   };
 
   const visibleStations = useMemo(() => {
-    if (!stations.length) return [];
+    // FIX: Guard clause added to prevent execution before Google Maps is fully initialised
+    if (!isLoaded || !window.google || !stations.length) return [];
     
     let routePolyline = null;
     if (viewMode === 'route' && directionsResult) {
@@ -390,7 +384,7 @@ export default function FuelView({ googleMapsApiKey, logoKey }) {
       });
     }
     return [];
-  }, [stations, mapBounds, mapCenter, fuelType, filterBrand, searchName, sortBy, viewMode, directionsResult]);
+  }, [isLoaded, stations, mapBounds, mapCenter, fuelType, filterBrand, searchName, sortBy, viewMode, directionsResult]); // FIX: Added isLoaded dependency
 
   if (loading || !isLoaded) return (
       <div style={{display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', padding:'20px', textAlign:'center'}}>
