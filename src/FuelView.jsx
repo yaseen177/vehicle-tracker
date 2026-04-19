@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow, DirectionsRenderer, Autocomplete, Circle, Rectangle } from '@react-google-maps/api';
-import { Search, MapPin, Info, Sparkles, ChevronDown, ChevronUp, Route as RouteIcon, Navigation, TrendingDown, TrendingUp } from 'lucide-react'; 
+import { Search, MapPin, Info, Sparkles, ChevronDown, ChevronUp, Route as RouteIcon, Navigation, TrendingDown, TrendingUp, Circle as CircleIcon, Square } from 'lucide-react'; 
 import { db } from './firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -139,8 +139,7 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
   const [searchRadius, setSearchRadius] = useState(5);
   const circleRef = useRef(null);
   
-  // --- NEW: Search Shape State ---
-  const [searchShape, setSearchShape] = useState('circle'); // 'circle' | 'rectangle'
+  const [searchShape, setSearchShape] = useState('circle'); 
   const [rectBounds, setRectBounds] = useState(null);
   const rectRef = useRef(null);
 
@@ -244,10 +243,16 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
     return () => { isMounted = false; };
   }, []);
 
+  // --- INFINITE LOOP FIX: Precision Tolerance Check on Map Idle ---
   const onMapIdle = useCallback(() => {
     if (mapRef.current && viewMode === 'area') {
       const center = mapRef.current.getCenter();
-      setMapCenter({ lat: center.lat(), lng: center.lng() });
+      setMapCenter(prev => {
+         if (prev && Math.abs(prev.lat - center.lat()) < 0.000001 && Math.abs(prev.lng - center.lng()) < 0.000001) {
+             return prev; 
+         }
+         return { lat: center.lat(), lng: center.lng() };
+      });
     }
   }, [viewMode]);
 
@@ -294,7 +299,6 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
         setSearchLocation(loc);
         mapRef.current.panTo(loc);
         
-        // Auto-generate rect bounds if rectangle mode is active
         if (searchShape === 'rectangle') {
             generateRectBounds(loc);
         }
@@ -309,7 +313,7 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
       if (val === "custom") return;
       const newRadius = Number(val);
       setSearchRadius(newRadius);
-      setSearchShape('circle'); // Force back to circle if dropdown used
+      setSearchShape('circle'); 
       
       if (mapRef.current) {
           let zoom = 14;
@@ -322,29 +326,46 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
       }
   };
 
+  // --- INFINITE LOOP FIX: Precision Tolerance Check on Circle Drag ---
   const handleCircleDrag = () => {
       if (circleRef.current) {
           const newRadiusMeters = circleRef.current.getRadius();
-          setSearchRadius(newRadiusMeters / 1609.34);
+          const newRadiusMiles = newRadiusMeters / 1609.34;
+          
+          setSearchRadius(prev => {
+              if (Math.abs(prev - newRadiusMiles) < 0.000001) return prev;
+              return newRadiusMiles;
+          });
       }
   };
 
+  // --- INFINITE LOOP FIX: Precision Tolerance Check on Rectangle Drag ---
   const handleRectDrag = () => {
       if (rectRef.current) {
           const b = rectRef.current.getBounds();
-          setRectBounds({
-              north: b.getNorthEast().lat(),
-              south: b.getSouthWest().lat(),
-              east: b.getNorthEast().lng(),
-              west: b.getSouthWest().lng()
+          if (!b) return;
+          
+          setRectBounds(prev => {
+              const north = b.getNorthEast().lat();
+              const south = b.getSouthWest().lat();
+              const east = b.getNorthEast().lng();
+              const west = b.getSouthWest().lng();
+
+              if (prev && 
+                  Math.abs(prev.north - north) < 0.000001 &&
+                  Math.abs(prev.south - south) < 0.000001 &&
+                  Math.abs(prev.east - east) < 0.000001 &&
+                  Math.abs(prev.west - west) < 0.000001) {
+                  return prev; 
+              }
+              return { north, south, east, west };
           });
       }
   };
 
   const generateRectBounds = (centerLoc) => {
-      // Rough approximation: 1 mile is ~0.014 degrees
       const offsetLat = searchRadius * 0.014;
-      const offsetLng = searchRadius * 0.02; // Lng offset needs to be wider in UK
+      const offsetLng = searchRadius * 0.02; 
       setRectBounds({
           north: centerLoc.lat + offsetLat,
           south: centerLoc.lat - offsetLat,
@@ -794,20 +815,22 @@ export default function FuelView({ googleMapsApiKey, logoKey, user }) {
       {/* --- MAP --- */}
       <div style={{height:'45vh', minHeight:'250px', borderRadius:'12px', overflow:'hidden', border:'1px solid var(--border)', position: 'relative', flexShrink:0}}>
         
-        {/* SHAPE SELECTOR OVERLAY */}
+        {/* SHAPE SELECTOR OVERLAY (LUCIDE ICONS ONLY) */}
         {viewMode === 'area' && (
             <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 10, display: 'flex', background: 'rgba(15, 23, 42, 0.9)', borderRadius: '8px', padding: '4px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}>
                 <button 
                     onClick={() => toggleShape('circle')} 
-                    style={{ background: searchShape === 'circle' ? '#3b82f6' : 'transparent', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', transition: 'background 0.2s' }}
+                    title="Circle Search"
+                    style={{ background: searchShape === 'circle' ? '#3b82f6' : 'transparent', color: 'white', border: 'none', padding: '8px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }}
                 >
-                    ⭕ Circle
+                    <CircleIcon size={18} />
                 </button>
                 <button 
                     onClick={() => toggleShape('rectangle')} 
-                    style={{ background: searchShape === 'rectangle' ? '#3b82f6' : 'transparent', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', transition: 'background 0.2s' }}
+                    title="Rectangle Search"
+                    style={{ background: searchShape === 'rectangle' ? '#3b82f6' : 'transparent', color: 'white', border: 'none', padding: '8px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }}
                 >
-                    ⬛ Rectangle
+                    <Square size={18} />
                 </button>
             </div>
         )}
